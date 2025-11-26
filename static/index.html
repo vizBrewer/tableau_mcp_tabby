@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Tableau AI Chat</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="static/style.css">
+    <script src="static/tableau.extensions.1.latest.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1><img src="static/favicon.ico" alt="tabby cat face" width="70"/> <i class="fa-solid fa-chart-column" aria-hidden="true"></i>  Tabby AI Assistant <i class="fa-solid fa-magnifying-glass-chart"></i> <i class="fa-solid fa-shield-cat"></i> </h1>
+        </header>
+
+        <div class="chat-box" id="chatBox">
+            <div class="message bot">
+                Hello, I'm Tabby &#128008;, your Analytics Agent, Ask me anything about your Tableau data.
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type your question here..."
+                onkeypress="handleEnter(event)">
+            <button onclick="sendMessage()" id="sendBtn">Send</button>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
