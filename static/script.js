@@ -49,7 +49,7 @@ async function sendMessage() {
     btn.textContent = 'Thinking...';
 
     // Create a placeholder for the streaming response
-    const streamingMessageId = addStreamingMessage();
+    const streamingContext = addStreamingMessage();
 
     try {
         const response = await fetch('/chat/stream', {
@@ -79,7 +79,7 @@ async function sendMessage() {
                 if (line.startsWith('data: ')) {
                     try {
                         const data = JSON.parse(line.slice(6));
-                        updateStreamingMessage(streamingMessageId, data);
+                        updateStreamingMessage(streamingContext, data);
                     } catch (e) {
                         console.error('Error parsing SSE data:', e);
                     }
@@ -88,7 +88,7 @@ async function sendMessage() {
         }
     } catch (error) {
         console.error('Error:', error);
-        updateStreamingMessage(streamingMessageId, {
+        updateStreamingMessage(streamingContext, {
             type: 'final',
             content: '⚠️ Could not connect to the server.',
             is_final: true
@@ -121,48 +121,28 @@ function addStreamingMessage() {
     const chatBox = document.getElementById('chatBox');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message bot streaming';
-    messageDiv.innerHTML = '<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> Analyzing your request...</div>';
-    
+    messageDiv.innerHTML = '<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> Thinking...</div>';
     chatBox.appendChild(messageDiv);
-    
-    // Auto scroll to bottom
     chatBox.scrollTop = chatBox.scrollHeight;
-    
+    // console.log(messageDiv.innerHTML);
     return messageDiv;
 }
 
-function updateStreamingMessage(messageElement, data) {
-    if (data.type === 'thinking') {
-        // Show agent thinking/planning
-        messageElement.innerHTML = `<div class="thinking-step">
-            <span class="step-indicator">💭</span> 
-            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
-        </div>`;
-    } else if (data.type === 'tool_call') {
-        // Show tool being called
-        messageElement.innerHTML = `<div class="thinking-step">
-            <span class="step-indicator">🔧</span> 
-            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
-        </div>`;
-    } else if (data.type === 'tool_result') {
-        // Show tool completion
-        messageElement.innerHTML = `<div class="thinking-step">
-            <span class="step-indicator">✅</span> 
-            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
-        </div>`;
-    } else if (data.type === 'step') {
-        // Show generic step (fallback)
-        messageElement.innerHTML = `<div class="thinking-step">
-            <span class="step-indicator">💭</span> 
-            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
-        </div>`;
-    } else if (data.type === 'final') {
-        // Show final result and remove streaming class
-        messageElement.classList.remove('streaming');
-        messageElement.innerHTML = data.content.replace(/\n/g, '<br>');
+function updateStreamingMessage(streamingElement, data) {
+    if (!streamingElement) {
+        console.error('Invalid streaming element');
+        return;
     }
     
-    // Auto scroll to bottom
+    if (data.type === 'step') {
+        // Update with intermediate step content
+        streamingElement.innerHTML = `<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> ${data.content.replace(/\n/g, '<br>')}</div>`;
+    } else if (data.type === 'final') {
+        // Replace with final response
+        streamingElement.classList.remove('streaming');
+        streamingElement.innerHTML = data.content.replace(/\n/g, '<br>');
+    }
+    
     const chatBox = document.getElementById('chatBox');
     chatBox.scrollTop = chatBox.scrollHeight;
 }

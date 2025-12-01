@@ -19,9 +19,9 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
     """Stream intermediate steps and final response from agent"""
     print(f"Starting stream for thread: {thread_id}")
     
-    step_count = 0
     final_response = ""
-    seen_messages = set()
+    seen_message_ids = set()
+    initial_message_count = None
     
     async for chunk in agent.astream(
         {"messages": messages}, 
@@ -29,65 +29,33 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
         stream_mode="values"
     ):
         if 'messages' in chunk and chunk['messages']:
-            # Process all new messages in this chunk
-            for message in chunk['messages']:
+            # Capture initial message count on first chunk
+            if initial_message_count is None:
+                initial_message_count = len(chunk['messages'])
+            
+            # Only process messages beyond the initial count (new messages)
+            new_messages = chunk['messages'][initial_message_count:]
+            
+            for message in new_messages:
                 message_id = getattr(message, 'id', None)
                 
-                # Skip if we've already processed this message
-                if message_id and message_id in seen_messages:
+                # Skip if we've already seen this message in this stream
+                if message_id and message_id in seen_message_ids:
                     continue
                     
                 if message_id:
-                    seen_messages.add(message_id)
+                    seen_message_ids.add(message_id)
                 
-                # Handle different message types
-                if hasattr(message, 'type'):
-                    if message.type == 'ai' and hasattr(message, 'content') and message.content:
-                        # AI thinking/planning message
-                        if not hasattr(message, 'tool_calls') or not message.tool_calls:
-                            step_count += 1
-                            yield {
-                                "type": "thinking",
-                                "step": step_count,
-                                "content": message.content,
-                                "is_final": False
-                            }
-                            final_response = message.content
-                        
-                        # AI message with tool calls
-                        elif hasattr(message, 'tool_calls') and message.tool_calls:
-                            for tool_call in message.tool_calls:
-                                step_count += 1
-                                tool_name = tool_call.get('name', 'unknown')
-                                tool_args = tool_call.get('args', {})
-                                
-                                yield {
-                                    "type": "tool_call",
-                                    "step": step_count,
-                                    "tool_name": tool_name,
-                                    "content": f"🔧 Calling {tool_name}...",
-                                    "args": tool_args,
-                                    "is_final": False
-                                }
-                    
-                    elif message.type == 'tool' and hasattr(message, 'content'):
-                        # Tool result message
-                        step_count += 1
-                        tool_name = getattr(message, 'name', 'unknown')
-                        
-                        # Truncate long tool results for display
-                        content = message.content
-                        if len(content) > 200:
-                            content = content[:200] + "... (truncated)"
-                        
+                # Stream AI thinking/reasoning
+                if hasattr(message, 'type') and message.type == 'ai':
+                    if hasattr(message, 'content') and message.content:
+                        # Yield intermediate thinking
                         yield {
-                            "type": "tool_result",
-                            "step": step_count,
-                            "tool_name": tool_name,
-                            "content": f"✅ {tool_name} completed",
-                            "result_preview": content,
+                            "type": "step",
+                            "content": message.content,
                             "is_final": False
                         }
+                        final_response = message.content
     
     # Send final response
     yield {

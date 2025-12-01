@@ -116,15 +116,56 @@ img.thinking-cat {
     object-fit: contain;
 }
 
+.steps-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .thinking-step {
     display: flex;
     align-items: flex-start;
     gap: 8px;
+    padding: 4px 0;
+    transition: opacity 0.3s ease;
+}
+
+.thinking-step.pending {
+    opacity: 0.7;
+}
+
+.thinking-step.pending .step-indicator {
+    animation: pulse-spin 1.5s infinite;
+}
+
+.thinking-step.completed {
+    opacity: 1;
+}
+
+.thinking-step.completed .step-text {
+    color: #28a745;
+}
+
+@keyframes pulse-spin {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
 }
 
 .step-indicator {
     font-size: 16px;
     margin-top: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.step-indicator .thinking-cat {
+    width: 16px !important;
+    height: 16px !important;
+    max-width: 16px !important;
+    max-height: 16px !important;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .step-text {
