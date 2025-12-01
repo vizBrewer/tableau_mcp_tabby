@@ -137,12 +137,20 @@ def static_index():
 @app.get("/session")
 async def init_session():
     thread_id = f"chat_session_{uuid.uuid4()}"
-    print('session id generated: '+ thread_id)
+    logger.info(f"New session created: {thread_id} (total sessions: {len(SESSION_STORE)})")
      # Initialize empty graph state for the conversation that the langraph checkpointer can populate
     SESSION_STORE[thread_id] = {
         "state": {},          # LangGraph state (checkpointer will populate it)
     }
     return {"thread_id": thread_id}
+
+@app.get("/debug/sessions")
+async def debug_sessions():
+    """Debug endpoint to check active sessions"""
+    return {
+        "active_sessions": len(SESSION_STORE),
+        "session_ids": list(SESSION_STORE.keys())
+    }
 
 @app.post("/chat")
 async def chat(request: ChatRequest) -> ChatResponse:
@@ -183,15 +191,37 @@ async def chat_stream(request: ChatRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized. Please restart the server.")
     
     thread_id = request.thread_id
+    logger.info(f"[{thread_id}] Received streaming request: {request.message[:50]}...")
+    
     if thread_id not in SESSION_STORE:
+        logger.warning(f"[{thread_id}] Unknown thread_id")
         raise HTTPException(status_code=400, detail="Unknown thread_id")
 
     try:
         messages = [HumanMessage(content=request.message)]
+        logger.info(f"[{thread_id}] Starting agent stream, active threads: {len(SESSION_STORE)}")
         
         async def generate_stream():
-            async for chunk in stream_agent_response(agent, messages, langfuse_handler, thread_id):
-                yield f"data: {json.dumps(chunk)}\n\n"
+            try:
+                async for chunk in stream_agent_response(agent, messages, langfuse_handler, thread_id):
+                    try:
+                        # Ensure proper JSON encoding
+                        json_str = json.dumps(chunk, ensure_ascii=False)
+                        yield f"data: {json_str}\n\n"
+                    except Exception as json_error:
+                        logger.error(f"[{thread_id}] Error encoding chunk to JSON: {str(json_error)}")
+                        # Send error as final response
+                        yield f"data: {json.dumps({'type': 'final', 'content': 'Error encoding response', 'is_final': True})}\n\n"
+                        break
+                logger.info(f"[{thread_id}] Stream completed successfully")
+            except Exception as e:
+                logger.error(f"[{thread_id}] Error during streaming: {str(e)}", exc_info=True)
+                # Always send a final error response
+                try:
+                    yield f"data: {json.dumps({'type': 'final', 'content': f'Error: {str(e)}', 'is_final': True})}\n\n"
+                except:
+                    # If even JSON encoding fails, send plain text
+                    yield f"data: {json.dumps({'type': 'final', 'content': 'An error occurred', 'is_final': True})}\n\n"
         
         return StreamingResponse(
             generate_stream(),
@@ -204,10 +234,10 @@ async def chat_stream(request: ChatRequest):
         )
         
     except Exception as e:
-        logger.error(f"Error processing streaming chat request: {str(e)}", exc_info=True)
+        logger.error(f"[{thread_id}] Error processing streaming chat request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 # Run the app
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=80)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

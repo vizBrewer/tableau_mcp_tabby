@@ -67,21 +67,43 @@ async function sendMessage() {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
             const { value, done } = await reader.read();
-            if (done) break;
+            if (done) {
+                // Process any remaining buffered data
+                if (buffer.trim()) {
+                    const lines = buffer.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                updateStreamingMessage(streamingContext, data);
+                            } catch (e) {
+                                console.error('Error parsing SSE data on close:', e, 'Line:', line.substring(0, 100));
+                            }
+                        }
+                    }
+                }
+                break;
+            }
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            
+            // Keep the last potentially incomplete line in the buffer
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
+                if (line.trim() && line.startsWith('data: ')) {
                     try {
-                        const data = JSON.parse(line.slice(6));
+                        const jsonStr = line.slice(6);
+                        const data = JSON.parse(jsonStr);
                         updateStreamingMessage(streamingContext, data);
                     } catch (e) {
                         console.error('Error parsing SSE data:', e);
+                        console.error('Problematic line:', line.substring(0, 200));
                     }
                 }
             }
@@ -90,7 +112,7 @@ async function sendMessage() {
         console.error('Error:', error);
         updateStreamingMessage(streamingContext, {
             type: 'final',
-            content: '⚠️ Could not connect to the server.',
+            content: '⚠️ Could not connect to the server. Refresh the page to start a new session.',
             is_final: true
         });
     }

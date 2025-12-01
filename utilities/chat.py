@@ -1,7 +1,7 @@
 
 async def format_agent_response(agent, messages, langfuse_handler, thread_id):
     """Stream response from agent and return the final content"""
-    print(thread_id)
+    # print(thread_id)
     response_text = ""
     async for chunk in agent.astream(
         {"messages": messages}, 
@@ -17,49 +17,66 @@ async def format_agent_response(agent, messages, langfuse_handler, thread_id):
 
 async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
     """Stream intermediate steps and final response from agent"""
-    print(f"Starting stream for thread: {thread_id}")
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[{thread_id}] Starting stream for thread")
     
     final_response = ""
     seen_message_ids = set()
     initial_message_count = None
     
-    async for chunk in agent.astream(
-        {"messages": messages}, 
-        config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
-        stream_mode="values"
-    ):
-        if 'messages' in chunk and chunk['messages']:
-            # Capture initial message count on first chunk
-            if initial_message_count is None:
-                initial_message_count = len(chunk['messages'])
-            
-            # Only process messages beyond the initial count (new messages)
-            new_messages = chunk['messages'][initial_message_count:]
-            
-            for message in new_messages:
-                message_id = getattr(message, 'id', None)
+    try:
+        async for chunk in agent.astream(
+            {"messages": messages}, 
+            config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
+            stream_mode="values"
+        ):
+            if 'messages' in chunk and chunk['messages']:
+                # Capture initial message count on first chunk
+                if initial_message_count is None:
+                    initial_message_count = len(chunk['messages'])
                 
-                # Skip if we've already seen this message in this stream
-                if message_id and message_id in seen_message_ids:
-                    continue
+                # Only process messages beyond the initial count (new messages)
+                new_messages = chunk['messages'][initial_message_count:]
+                
+                for message in new_messages:
+                    message_id = getattr(message, 'id', None)
                     
-                if message_id:
-                    seen_message_ids.add(message_id)
-                
-                # Stream AI thinking/reasoning
-                if hasattr(message, 'type') and message.type == 'ai':
-                    if hasattr(message, 'content') and message.content:
-                        # Yield intermediate thinking
-                        yield {
-                            "type": "step",
-                            "content": message.content,
-                            "is_final": False
-                        }
-                        final_response = message.content
-    
-    # Send final response
-    yield {
-        "type": "final",
-        "content": final_response,
-        "is_final": True
-    }
+                    # Skip if we've already seen this message in this stream
+                    if message_id and message_id in seen_message_ids:
+                        continue
+                        
+                    if message_id:
+                        seen_message_ids.add(message_id)
+                    
+                    # Stream AI thinking/reasoning
+                    if hasattr(message, 'type') and message.type == 'ai':
+                        if hasattr(message, 'content') and message.content:
+                            # Yield intermediate thinking
+                            yield {
+                                "type": "step",
+                                "content": message.content,
+                                "is_final": False
+                            }
+                            final_response = message.content
+        
+        # Send final response
+        if not final_response:
+            logger.warning(f"[{thread_id}] No final response captured, sending empty response")
+            final_response = "I apologize, but I wasn't able to generate a response."
+        
+        yield {
+            "type": "final",
+            "content": final_response,
+            "is_final": True
+        }
+        logger.info(f"[{thread_id}] Stream completed, final response length: {len(final_response)}")
+        
+    except Exception as e:
+        logger.error(f"[{thread_id}] Error in stream_agent_response: {str(e)}", exc_info=True)
+        # Always send a final response, even on error
+        yield {
+            "type": "final",
+            "content": f"I encountered an error: {str(e)}",
+            "is_final": True
+        }
