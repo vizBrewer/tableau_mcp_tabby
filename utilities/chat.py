@@ -21,6 +21,7 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
     
     step_count = 0
     final_response = ""
+    seen_messages = set()
     
     async for chunk in agent.astream(
         {"messages": messages}, 
@@ -28,22 +29,65 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
         stream_mode="values"
     ):
         if 'messages' in chunk and chunk['messages']:
-            latest_message = chunk['messages'][-1]
-            
-            if hasattr(latest_message, 'content') and latest_message.content:
-                # Check if this is an AI message with thinking content
-                if hasattr(latest_message, 'type') and latest_message.type == 'ai':
-                    step_count += 1
+            # Process all new messages in this chunk
+            for message in chunk['messages']:
+                message_id = getattr(message, 'id', None)
+                
+                # Skip if we've already processed this message
+                if message_id and message_id in seen_messages:
+                    continue
                     
-                    # Send intermediate step
-                    yield {
-                        "type": "step",
-                        "step": step_count,
-                        "content": latest_message.content,
-                        "is_final": False
-                    }
+                if message_id:
+                    seen_messages.add(message_id)
+                
+                # Handle different message types
+                if hasattr(message, 'type'):
+                    if message.type == 'ai' and hasattr(message, 'content') and message.content:
+                        # AI thinking/planning message
+                        if not hasattr(message, 'tool_calls') or not message.tool_calls:
+                            step_count += 1
+                            yield {
+                                "type": "thinking",
+                                "step": step_count,
+                                "content": message.content,
+                                "is_final": False
+                            }
+                            final_response = message.content
+                        
+                        # AI message with tool calls
+                        elif hasattr(message, 'tool_calls') and message.tool_calls:
+                            for tool_call in message.tool_calls:
+                                step_count += 1
+                                tool_name = tool_call.get('name', 'unknown')
+                                tool_args = tool_call.get('args', {})
+                                
+                                yield {
+                                    "type": "tool_call",
+                                    "step": step_count,
+                                    "tool_name": tool_name,
+                                    "content": f"🔧 Calling {tool_name}...",
+                                    "args": tool_args,
+                                    "is_final": False
+                                }
                     
-                    final_response = latest_message.content
+                    elif message.type == 'tool' and hasattr(message, 'content'):
+                        # Tool result message
+                        step_count += 1
+                        tool_name = getattr(message, 'name', 'unknown')
+                        
+                        # Truncate long tool results for display
+                        content = message.content
+                        if len(content) > 200:
+                            content = content[:200] + "... (truncated)"
+                        
+                        yield {
+                            "type": "tool_result",
+                            "step": step_count,
+                            "tool_name": tool_name,
+                            "content": f"✅ {tool_name} completed",
+                            "result_preview": content,
+                            "is_final": False
+                        }
     
     # Send final response
     yield {

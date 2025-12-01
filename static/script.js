@@ -132,8 +132,26 @@ function addStreamingMessage() {
 }
 
 function updateStreamingMessage(messageElement, data) {
-    if (data.type === 'step') {
-        // Show intermediate step
+    if (data.type === 'thinking') {
+        // Show agent thinking/planning
+        messageElement.innerHTML = `<div class="thinking-step">
+            <span class="step-indicator">💭</span> 
+            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
+        </div>`;
+    } else if (data.type === 'tool_call') {
+        // Show tool being called
+        messageElement.innerHTML = `<div class="thinking-step">
+            <span class="step-indicator">🔧</span> 
+            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
+        </div>`;
+    } else if (data.type === 'tool_result') {
+        // Show tool completion
+        messageElement.innerHTML = `<div class="thinking-step">
+            <span class="step-indicator">✅</span> 
+            <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
+        </div>`;
+    } else if (data.type === 'step') {
+        // Show generic step (fallback)
         messageElement.innerHTML = `<div class="thinking-step">
             <span class="step-indicator">💭</span> 
             <span class="step-text">${data.content.replace(/\n/g, '<br>')}</span>
