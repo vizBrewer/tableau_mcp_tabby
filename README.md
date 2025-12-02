@@ -15,16 +15,6 @@ A streaming AI chat interface for Tableau data analysis, featuring real-time age
 - **🔧 Dashboard Extension**: Embed directly into Tableau dashboards *Under Continued Construction*
 - **📝 Flexible Callbacks**: Choose between FileCallbackHandler, Langfuse, or no callbacks
 
-## 🚀 What Makes This Different
-Unlike traditional chat interfaces that only show final results, Tableau MCP Tabby streams the agent's intermediate thinking steps in real-time:
-
-```
-🐱 Analyzing your request...
-💭 I'll analyze this step by step: Identify the correct datasource...
-💭 Inspecting schema to find the date field and visit counter...
-💭 Querying the datasource to count visits for the last complete year...
-📊 [Final results displayed]
-```
 
 **Architecture Note:** This application uses a streamable-http interface with an MCP server instead of a localized instance. The Tableau MCP server uses Direct Trust and Connected Apps to facilitate the connection and authentication.
 ## 📋 Prerequisites
