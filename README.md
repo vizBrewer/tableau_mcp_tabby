@@ -180,7 +180,7 @@ Open your browser to `http://localhost:8000` and start chatting with your data!
 1. **Install prerequisites:**
 
 ```bash
-# Install Node.js (required for MCP server)
+# Install Node.js (required for MCP server if running on same instance)
 curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
 sudo yum install -y nodejs
 
@@ -228,7 +228,7 @@ cp .env_template .env
 
 5. **Set up MCP server as a systemd service (if running on same instance):**
 
-Create `/etc/systemd/system/tableau-mcp.service` (if running MCP server on same instance):
+Create `/etc/systemd/system/tableau-mcp.service`:
 
 ```ini
 [Unit]
@@ -263,7 +263,7 @@ Create `/etc/systemd/system/tabby.service`:
 ```ini
 [Unit]
 Description=Tableau Chatbot
-After=network.target
+After=network.target tableau-mcp.service
 
 [Service]
 User=tabby-user
@@ -302,8 +302,9 @@ sudo journalctl -u tableau-mcp -f
 
 **Important Notes:**
 - The web application service uses `--workers 1` because session state is stored in-memory. For multi-worker support, you would need to implement shared session storage (Redis, SQLite, etc.).
-- If running both services on the same instance, ensure the MCP server starts before the web application (use `After=tableau-mcp.service` in the `[Unit]` section of `tabby.service`).
+- If running both services on the same instance, ensure the MCP server starts before the web application (service dependency is configured in the systemd unit files).
 - Adjust instance size based on expected load - both services running together will require more CPU and memory.
+- If MCP server is on a different instance, remove `tableau-mcp.service` from the `After=` line in `tabby.service` and configure the appropriate network URL in `.env`.
 
 ### Dashboard Extension
 
