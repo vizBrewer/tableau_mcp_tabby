@@ -1,19 +1,34 @@
 
-async def format_agent_response(agent, messages, langfuse_handler, thread_id):
-    """Stream response from agent and return the final content"""
-    # print(thread_id)
-    response_text = ""
-    async for chunk in agent.astream(
-        {"messages": messages}, 
-        config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
-        stream_mode="values"
-    ):
-        if 'messages' in chunk and chunk['messages']:
-            latest_message = chunk['messages'][-1]
-            if hasattr(latest_message, 'content'):
-                response_text = latest_message.content
-    
-    return response_text
+# LEGACY/TESTING: Non-streaming response function (currently not used - frontend uses stream_agent_response)
+# Uncomment if you need a non-streaming endpoint for testing purposes
+# async def format_agent_response(agent, messages, langfuse_handler, thread_id):
+#     """Stream response from agent and return the final content"""
+#     # print(thread_id)
+#     response_text = ""
+#     try:
+#         async for chunk in agent.astream(
+#             {"messages": messages}, 
+#             config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
+#             stream_mode="values"
+#         ):
+#             if 'messages' in chunk and chunk['messages']:
+#                 latest_message = chunk['messages'][-1]
+#                 if hasattr(latest_message, 'content'):
+#                     response_text = latest_message.content
+#         
+#         # Clean up MCP error -32602 (schema validation errors)
+#         if response_text and ("MCP error -32602" in response_text or "error -32602" in response_text):
+#             import logging
+#             logger = logging.getLogger(__name__)
+#             logger.warning(f"[{thread_id}] Detected MCP error -32602 in response, replacing with user-friendly message")
+#             response_text = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
+#         
+#         return response_text
+#     except Exception as e:
+#         error_str = str(e)
+#         if "MCP error -32602" in error_str or "error -32602" in error_str:
+#             return "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
+#         raise
 
 async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
     """Stream intermediate steps and final response from agent"""
@@ -65,6 +80,11 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
             logger.warning(f"[{thread_id}] No final response captured, sending empty response")
             final_response = "I apologize, but I wasn't able to generate a response."
         
+        # Clean up MCP error -32602 (schema validation errors) - these are very long and not user-friendly
+        if "MCP error -32602" in final_response or "error -32602" in final_response:
+            logger.warning(f"[{thread_id}] Detected MCP error -32602, replacing with user-friendly message")
+            final_response = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
+        
         yield {
             "type": "final",
             "content": final_response,
@@ -74,9 +94,17 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
         
     except Exception as e:
         logger.error(f"[{thread_id}] Error in stream_agent_response: {str(e)}", exc_info=True)
+        
+        # Check if it's an MCP error -32602
+        error_str = str(e)
+        if "MCP error -32602" in error_str or "error -32602" in error_str:
+            final_error_message = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
+        else:
+            final_error_message = f"I encountered an error: {error_str[:200]}"  # Limit length for other errors
+        
         # Always send a final response, even on error
         yield {
             "type": "final",
-            "content": f"I encountered an error: {str(e)}",
+            "content": final_error_message,
             "is_final": True
         }

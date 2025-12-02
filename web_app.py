@@ -24,7 +24,9 @@ logger = setup_logging("web_app.log")
 
 # Load System Prompt and Message Formatter
 from utilities.prompt import AGENT_SYSTEM_PROMPT
-from utilities.chat import format_agent_response, stream_agent_response
+from utilities.chat import stream_agent_response
+# LEGACY/TESTING: format_agent_response is commented out - uncomment if you need non-streaming endpoint
+# from utilities.chat import format_agent_response
 
 # Load Environment and set MCP endpoint
 import os
@@ -152,34 +154,36 @@ async def debug_sessions():
         "session_ids": list(SESSION_STORE.keys())
     }
 
-@app.post("/chat")
-async def chat(request: ChatRequest) -> ChatResponse:
-    """Handle chat messages - this is where the AI magic happens"""
-    global agent
-    
-    if agent is None:
-        logger.error("Agent not initialized")
-        raise HTTPException(status_code=500, detail="Agent not initialized. Please restart the server.")
-    
-    # Bring in the chat thread id
-    thread_id = request.thread_id
-
-    if thread_id not in SESSION_STORE:
-        raise HTTPException(status_code=400, detail="Unknown thread_id")
-
-    try:   
-        # Create proper message format for LangGraph
-        messages = [HumanMessage(content=request.message)]
-
-        # Get response from agent
-        response_text = await format_agent_response(agent, messages, langfuse_handler, thread_id)
-        
-        return ChatResponse(response=response_text)
-        
-    # Error Handling
-    except Exception as e:
-        logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+# LEGACY/TESTING: Non-streaming chat endpoint (currently not used by frontend)
+# Uncomment if you need a non-streaming endpoint for testing purposes
+# @app.post("/chat")
+# async def chat(request: ChatRequest) -> ChatResponse:
+#     """Handle chat messages - this is where the AI magic happens"""
+#     global agent
+#     
+#     if agent is None:
+#         logger.error("Agent not initialized")
+#         raise HTTPException(status_code=500, detail="Agent not initialized. Please restart the server.")
+#     
+#     # Bring in the chat thread id
+#     thread_id = request.thread_id
+# 
+#     if thread_id not in SESSION_STORE:
+#         raise HTTPException(status_code=400, detail="Unknown thread_id")
+# 
+#     try:   
+#         # Create proper message format for LangGraph
+#         messages = [HumanMessage(content=request.message)]
+# 
+#         # Get response from agent
+#         response_text = await format_agent_response(agent, messages, langfuse_handler, thread_id)
+#         
+#         return ChatResponse(response=response_text)
+#         
+#     # Error Handling
+#     except Exception as e:
+#         logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
+#         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -240,4 +244,4 @@ async def chat_stream(request: ChatRequest):
 # Run the app
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -63,6 +63,32 @@ When greeting users, suggest these types of analysis examples:
   - Include proper aggregation functions for measures (SUM, AVG, COUNT, etc.)
   - Use valid filter operators and values based on field types
   - Structure VizQL queries properly with SELECT, FROM, WHERE clauses
+
+**CRITICAL: Filter Types and Structure**
+* **Valid filter types ONLY:** SET, DATE, TOP, QUANTITATIVE_NUMERICAL, MATCH
+* **NEVER use:** QUANTITATIVE_DATE (this doesn't exist - use DATE instead)
+* **Field objects MUST include:**
+  - `fieldCaption`: Required string (exact field name from metadata)
+  - `function`: Required for measures (SUM, AVG, COUNT, COUNTD, MIN, MAX, etc.), optional for dimensions
+  - NO `calculation` key - use `function` instead
+  - Examples:
+    * Measure: {{"fieldCaption": "Sales", "function": "SUM"}}
+    * Dimension: {{"fieldCaption": "Category"}} (no function needed)
+* **DATE filter structure (for date fields):**
+  - `filterType`: "DATE" (NOT "QUANTITATIVE_DATE")
+  - `field`: {{"fieldCaption": "FieldName"}}
+  - `periodType`: "MINUTES" | "HOURS" | "DAYS" | "WEEKS" | "MONTHS" | "QUARTERS" | "YEARS"
+  - `dateRangeType`: "CURRENT" | "LAST" | "NEXT" | "LASTN" | "NEXTN" | "TODATE"
+  - `rangeN`: number (required if dateRangeType is "LASTN" or "NEXTN")
+  - NO `quantitativeFilterType` key
+  - NO `maxDate` or `minDate` keys
+  - Example: {{"field": {{"fieldCaption": "Visit Date"}}, "filterType": "DATE", "periodType": "YEARS", "dateRangeType": "LASTN", "rangeN": 3}}
+* **QUANTITATIVE_NUMERICAL filter (for numeric ranges):**
+  - `filterType`: "QUANTITATIVE_NUMERICAL"
+  - `field`: {{"fieldCaption": "FieldName"}}
+  - `quantitativeFilterType`: "MIN" | "MAX" | "RANGE" | "ONLY_NULL" | "ONLY_NON_NULL"
+  - `min`: number (for MIN, RANGE)
+  - `max`: number (for MAX, RANGE)
 * **Error Recovery:** If a tool call fails, explain the issue to the user and suggest alternative approaches
 
 """

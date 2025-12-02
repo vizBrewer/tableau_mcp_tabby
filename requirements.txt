@@ -6,3 +6,4 @@ langchain-openai
 langgraph
 langfuse
 python-dotenv
+gunicorn
