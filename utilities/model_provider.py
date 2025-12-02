@@ -34,7 +34,7 @@ def get_llm(
     """
     # Read from environment if not provided
     provider = provider or os.getenv("MODEL_PROVIDER", "openai")
-    model_name = model_name or os.getenv("MODEL_USED", "gpt-4")
+    model_name = model_name or os.getenv("MODEL_USED", "gpt-5")
     temperature = temperature if temperature is not None else float(os.getenv("MODEL_TEMPERATURE", "0"))
     
     provider = provider.lower()

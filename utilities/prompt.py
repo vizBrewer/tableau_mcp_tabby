@@ -91,6 +91,14 @@ When greeting users, suggest these types of analysis examples:
   - `max`: number (for MAX, RANGE)
 * **Error Recovery:** If a tool call fails, explain the issue to the user and suggest alternative approaches
 
+* **SET filter structure (for categorical/dimension fields with multiple values):**
+  - `filterType`: "SET"
+  - `field`: {{"fieldCaption": "FieldName"}}
+  - `values`: array of strings containing ALL values to filter on
+  - **CRITICAL:** If filtering a field by multiple values, combine them into ONE SET filter with all values in the `values` array
+  - **NEVER create multiple filter objects for the same field** - this will cause the error "The query must not include multiple filters for the following fields"
+  - Example: {{"filterType": "SET", "field": {{"fieldCaption": "Category"}}, "values": ["Furniture", "Office Supplies", "Technology"]}}
+
 """
 
 AGENT_SYSTEM_PROMPT = f"""
