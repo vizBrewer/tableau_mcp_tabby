@@ -11,7 +11,6 @@ from mcp.client.streamable_http import streamablehttp_client
 
 # LangChain Libraries
 from langchain_mcp_adapters.tools import load_mcp_tools
-from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
@@ -25,6 +24,7 @@ logger = setup_logging("web_app.log")
 # Load System Prompt and Message Formatter
 from utilities.prompt import AGENT_SYSTEM_PROMPT
 from utilities.chat import stream_agent_response
+from utilities.model_provider import get_llm
 # LEGACY/TESTING: format_agent_response is commented out - uncomment if you need non-streaming endpoint
 # from utilities.chat import format_agent_response
 
@@ -41,9 +41,22 @@ mcp_http_url = os.getenv(
 if not mcp_http_url:
     raise RuntimeError("TABLEAU_MCP_HTTP_URL must be defined")
 
-# Set Langfuse Tracing
-from langfuse.langchain import CallbackHandler
-langfuse_handler = CallbackHandler()
+# Set Langfuse Tracing or local Tracing
+callback_handler = None
+_file_callback_handler_ctx = None  # Store context manager reference
+
+if os.getenv("USE_LANGFUSE", "false").lower() == "true":
+    from langfuse.langchain import CallbackHandler
+    callback_handler = CallbackHandler()
+elif os.getenv("USE_LANGFUSE", "false").lower() == "false":
+    from langchain_core.callbacks import FileCallbackHandler
+    os.makedirs(".logs", exist_ok=True)  # Ensure .logs directory exists
+    # FileCallbackHandler will be entered as context manager in lifespan
+    _file_callback_handler_ctx = FileCallbackHandler(filename=".logs/agent_trace.jsonl")
+else:
+    callback_handler = None
+    _file_callback_handler_ctx = None
+
 
 # Global variables for agent and session
 agent = None
@@ -54,8 +67,13 @@ SESSION_STORE = {}
 # Global async context manager for MCP connection
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent
+    global agent, callback_handler, _file_callback_handler_ctx
     logger.info("Starting up application...")
+    
+    # Enter FileCallbackHandler context manager if using file-based callbacks
+    if _file_callback_handler_ctx is not None:
+        callback_handler = _file_callback_handler_ctx.__enter__()
+        logger.info("FileCallbackHandler context entered")
     
     try:
         logger.info("Connecting to Tableau MCP via Streamable HTTP at %s", mcp_http_url)
@@ -93,8 +111,8 @@ async def lifespan(app: FastAPI):
                 
                 # logger.info("Tool loading and inspection complete")
                 
-                # Set AI Model
-                llm = ChatOpenAI(model="gpt-5", temperature=0)
+                # Initialize LLM using model provider utility
+                llm = get_llm()
 
                 # Create the agent
                 checkpointer = InMemorySaver()
@@ -106,6 +124,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         raise
+    finally:
+        # Exit FileCallbackHandler context manager on shutdown
+        if _file_callback_handler_ctx is not None:
+            _file_callback_handler_ctx.__exit__(None, None, None)
+            logger.info("FileCallbackHandler context exited")
 
 # Create FastAPI app with lifespan
 app = FastAPI(
@@ -207,7 +230,7 @@ async def chat_stream(request: ChatRequest):
         
         async def generate_stream():
             try:
-                async for chunk in stream_agent_response(agent, messages, langfuse_handler, thread_id):
+                async for chunk in stream_agent_response(agent, messages, callback_handler, thread_id):
                     try:
                         # Ensure proper JSON encoding
                         json_str = json.dumps(chunk, ensure_ascii=False)

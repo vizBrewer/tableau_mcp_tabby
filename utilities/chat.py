@@ -1,14 +1,14 @@
 
 # LEGACY/TESTING: Non-streaming response function (currently not used - frontend uses stream_agent_response)
 # Uncomment if you need a non-streaming endpoint for testing purposes
-# async def format_agent_response(agent, messages, langfuse_handler, thread_id):
+# async def format_agent_response(agent, messages, callback_handler, thread_id):
 #     """Stream response from agent and return the final content"""
 #     # print(thread_id)
 #     response_text = ""
 #     try:
 #         async for chunk in agent.astream(
 #             {"messages": messages}, 
-#             config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
+#             config={"configurable": {"thread_id": thread_id}, "callbacks": [callback_handler]}, 
 #             stream_mode="values"
 #         ):
 #             if 'messages' in chunk and chunk['messages']:
@@ -30,7 +30,7 @@
 #             return "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
 #         raise
 
-async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
+async def stream_agent_response(agent, messages, callback_handler, thread_id):
     """Stream intermediate steps and final response from agent"""
     import logging
     logger = logging.getLogger(__name__)
@@ -43,7 +43,8 @@ async def stream_agent_response(agent, messages, langfuse_handler, thread_id):
     try:
         async for chunk in agent.astream(
             {"messages": messages}, 
-            config={"configurable": {"thread_id": thread_id}, "callbacks": [langfuse_handler]}, 
+            # checks if callback handler is not None then add it to the config, otherwise add an empty list
+            config={"configurable": {"thread_id": thread_id}, "callbacks": [callback_handler] if callback_handler else []},
             stream_mode="values"
         ):
             if 'messages' in chunk and chunk['messages']:

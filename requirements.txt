@@ -3,7 +3,9 @@ mcp
 langchain
 langchain-mcp-adapters
 langchain-openai
+langchain-aws
 langgraph
 langfuse
 python-dotenv
 gunicorn
+boto3
