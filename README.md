@@ -37,14 +37,20 @@ This application sends Tableau data to external AI models. For production use wi
 
 ## 🛠️ Installation
 
-### 1. Install Tableau MCP Server this will be on a separate machine.
+### 1. Install Tableau MCP Server this will be on a separate machine. 
+#### There is an environment template included in this repo for reference purposes
+
+#### Be sure the node.js version is at least 22.15
 
 ```bash
+node -v
 git clone https://github.com/tableau/tableau-mcp.git
 cd tableau-mcp
+#build .env file
 npm install
 npm run build
 ```
+
 
 ### 2. Clone This Repository
 
@@ -87,7 +93,7 @@ TABLEAU_MCP_HTTP_URL=http://localhost:3927/tableau-mcp
 
 # Model Provider Configuration
 MODEL_PROVIDER=openai          # Options: "openai" or "aws"
-MODEL_USED=gpt-4               # Model name (e.g., "gpt-4", "gpt-4-turbo" for OpenAI)
+MODEL_USED=gpt-5               # Model name (e.g., "gpt-5", "gpt-4-turbo" for OpenAI)
 MODEL_TEMPERATURE=0            # Temperature setting (0-2)
 
 # OpenAI Configuration (required if MODEL_PROVIDER=openai)
@@ -100,7 +106,8 @@ AWS_REGION=us-east-1           # AWS region where Bedrock is available
 # AWS_SESSION_TOKEN=optional   # Only needed for temporary credentials
 
 # Optional: Langfuse Observability
-USE_LANGFUSE=false             # Set to "true" to enable Langfuse tracing
+# Set to "true" to enable Langfuse tracing false for local file tracing or none for no tracing
+USE_LANGFUSE=none             
 LANGFUSE_PUBLIC_KEY=your-public-key
 LANGFUSE_SECRET_KEY=your-secret-key
 LANGFUSE_HOST=https://us.cloud.langfuse.com
@@ -142,7 +149,7 @@ The MCP server will start on port 3927 by default. Ensure it's accessible at the
 
 ### Development Mode
 
-**Prerequisites:** Ensure the Tableau MCP server is running (see Installation step 2).
+**Prerequisites:** Ensure the Tableau MCP server is running
 
 ```bash
 # Activate virtual environment (if not already active)
@@ -192,18 +199,14 @@ python3 --version
 2. **Set up Tableau MCP Server (if running on same instance):**
 
 ```bash
-# Create directory for MCP server
-sudo mkdir -p /opt/tableau-mcp
-sudo chown $USER:$USER /opt/tableau-mcp
-cd /opt/tableau-mcp
-
 # Clone and build MCP server
-git clone https://github.com/tableau/tableau-mcp.git .
+git clone https://github.com/tableau/tableau-mcp.git 
+# Set up MCP server environment (create .env file with Tableau credentials)
+# Note: MCP server has its own configuration requirements
 npm install
 npm run build
 
-# Set up MCP server environment (create .env file with Tableau credentials)
-# Note: MCP server has its own configuration requirements
+
 ```
 
 3. **Create a dedicated user for the web application:**
@@ -216,7 +219,7 @@ sudo su - tabby-user
 4. **Clone and set up the web application:**
 
 ```bash
-git clone https://github.com/yourusername/tableau_mcp_tabby.git
+git clone https://github.com/vizBrewer/tableau_mcp_tabby.git
 cd tableau_mcp_tabby
 python3 -m venv venv
 source venv/bin/activate
