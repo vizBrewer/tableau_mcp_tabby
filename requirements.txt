@@ -1,11 +1,22 @@
+# Web framework and server
 fastapi
+uvicorn
+gunicorn
+
+# MCP and LangChain integrations
 mcp
 langchain
+langchain-core
 langchain-mcp-adapters
 langchain-openai
 langchain-aws
 langgraph
+
+# Optional: Tracing (only needed if USE_LANGFUSE=true)
 langfuse
+
+# Utilities
 python-dotenv
-gunicorn
+
+# AWS dependencies (only needed if MODEL_PROVIDER=aws)
 boto3
