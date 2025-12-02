@@ -160,16 +160,60 @@ Open your browser to `http://localhost:8000` and start chatting with your data!
 
 ⚠️ **Important:** This application uses in-memory session storage and is **NOT compatible with multi-worker deployments**. It has been verified to work with **single worker, multi-threaded** configurations on **Amazon Linux 2023**.
 
+#### Architecture Options
+
+**Option 1: Single EC2 Instance (Recommended for simpler deployments)**
+- Both the web application and MCP server run on the same EC2 instance
+- Simpler setup and deployment
+- Lower network latency (localhost communication)
+- Single machine to manage
+- Requires both Node.js and Python installed
+
+**Option 2: Separate Instances**
+- Web application and MCP server on different EC2 instances
+- Better isolation and security boundaries
+- Can scale components independently
+- Requires network configuration between instances
+
 #### Deployment on Amazon Linux 2023 (EC2)
 
-1. **Create a dedicated user:**
+1. **Install prerequisites:**
+
+```bash
+# Install Node.js (required for MCP server)
+curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+sudo yum install -y nodejs
+
+# Install Python 3.11+ (usually pre-installed on Amazon Linux 2023)
+python3 --version
+# If needed: sudo yum install -y python3.11 python3.11-pip python3.11-venv
+```
+
+2. **Set up Tableau MCP Server (if running on same instance):**
+
+```bash
+# Create directory for MCP server
+sudo mkdir -p /opt/tableau-mcp
+sudo chown $USER:$USER /opt/tableau-mcp
+cd /opt/tableau-mcp
+
+# Clone and build MCP server
+git clone https://github.com/tableau/tableau-mcp.git .
+npm install
+npm run build
+
+# Set up MCP server environment (create .env file with Tableau credentials)
+# Note: MCP server has its own configuration requirements
+```
+
+3. **Create a dedicated user for the web application:**
 
 ```bash
 sudo useradd -m -s /bin/bash tabby-user
 sudo su - tabby-user
 ```
 
-2. **Clone and set up the application:**
+4. **Clone and set up the web application:**
 
 ```bash
 git clone https://github.com/yourusername/tableau_mcp_tabby.git
@@ -179,9 +223,40 @@ source venv/bin/activate
 pip install -r requirements.txt
 cp .env_template .env
 # Edit .env with your configuration
+# If MCP server is on same instance, use: TABLEAU_MCP_HTTP_URL=http://localhost:3927/tableau-mcp
 ```
 
-3. **Create systemd service file:**
+5. **Set up MCP server as a systemd service (if running on same instance):**
+
+Create `/etc/systemd/system/tableau-mcp.service` (if running MCP server on same instance):
+
+```ini
+[Unit]
+Description=Tableau MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=tabby-user
+WorkingDirectory=/opt/tableau-mcp
+ExecStart=/usr/bin/node build/index.js serve:http
+Restart=always
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the MCP server:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable tableau-mcp
+sudo systemctl start tableau-mcp
+sudo systemctl status tableau-mcp
+```
+
+6. **Create systemd service file for web application:**
 
 Create `/etc/systemd/system/tabby.service`:
 
@@ -206,7 +281,7 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-4. **Enable and start the service:**
+7. **Enable and start the web application service:**
 
 ```bash
 sudo systemctl daemon-reload
@@ -215,13 +290,20 @@ sudo systemctl start tabby
 sudo systemctl status tabby
 ```
 
-5. **View logs:**
+8. **View logs:**
 
 ```bash
+# Web application logs
 sudo journalctl -u tabby -f
+
+# MCP server logs (if running on same instance)
+sudo journalctl -u tableau-mcp -f
 ```
 
-**Note:** The service uses `--workers 1` because session state is stored in-memory. For multi-worker support, you would need to implement shared session storage (Redis, SQLite, etc.).
+**Important Notes:**
+- The web application service uses `--workers 1` because session state is stored in-memory. For multi-worker support, you would need to implement shared session storage (Redis, SQLite, etc.).
+- If running both services on the same instance, ensure the MCP server starts before the web application (use `After=tableau-mcp.service` in the `[Unit]` section of `tabby.service`).
+- Adjust instance size based on expected load - both services running together will require more CPU and memory.
 
 ### Dashboard Extension
 
