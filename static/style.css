@@ -52,13 +52,21 @@ body.in-extension .container {
 header {
     background: #2c3e50;
     color: white;
-    padding: 30px;
+    padding: 12px;
     text-align: center;
 }
 
 header h1 {
     margin: 0 0 10px 0;
     font-size: 2em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+header h1 img {
+    vertical-align: middle;
 }
 
 header p {
