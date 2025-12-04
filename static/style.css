@@ -52,13 +52,13 @@ body.in-extension .container {
 header {
     background: #2c3e50;
     color: white;
-    padding: 12px;
+    padding: 2px;
     text-align: center;
 }
 
 header h1 {
     margin: 0 0 10px 0;
-    font-size: 2em;
+    font-size: 1.5em;
     display: flex;
     align-items: center;
     justify-content: center;

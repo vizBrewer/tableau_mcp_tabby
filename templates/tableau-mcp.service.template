@@ -1,0 +1,14 @@
+[Unit]
+Description=Tableau MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=tabby-user
+WorkingDirectory=/opt/tableau-mcp
+ExecStart=/usr/bin/node build/index.js serve:http
+Restart=always
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
