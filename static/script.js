@@ -159,6 +159,9 @@ function updateStreamingMessage(streamingElement, data) {
     if (data.type === 'step') {
         // Update with intermediate step content
         streamingElement.innerHTML = `<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> ${data.content.replace(/\n/g, '<br>')}</div>`;
+        // Only scroll if it is an intermediate step and not the final response
+        const chatBox = document.getElementById('chatBox');
+        chatBox.scrollTop = chatBox.scrollHeight;
     } else if (data.type === 'final') {
         // Replace with final response
         streamingElement.classList.remove('streaming');
@@ -173,7 +176,7 @@ function updateStreamingMessage(streamingElement, data) {
 // Allow Enter to send message
 // -----------------------------
 function handleEnter(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !document.getElementById('sendBtn').disabled) {
         event.preventDefault();
         sendMessage();
     }

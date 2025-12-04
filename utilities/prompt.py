@@ -67,6 +67,7 @@ When greeting users, suggest these types of analysis examples:
 **CRITICAL: Filter Types and Structure**
 * **Valid filter types ONLY:** SET, DATE, TOP, QUANTITATIVE_NUMERICAL, MATCH
 * **NEVER use:** QUANTITATIVE_DATE (this doesn't exist - use DATE instead)
+* **NEVER use "topFilter" as a key name** - use `filterType: "TOP"` instead
 * **Field objects MUST include:**
   - `fieldCaption`: Required string (exact field name from metadata)
   - `function`: Required for measures (SUM, AVG, COUNT, COUNTD, MIN, MAX, etc.), optional for dimensions
@@ -89,6 +90,14 @@ When greeting users, suggest these types of analysis examples:
   - `quantitativeFilterType`: "MIN" | "MAX" | "RANGE" | "ONLY_NULL" | "ONLY_NON_NULL"
   - `min`: number (for MIN, RANGE)
   - `max`: number (for MAX, RANGE)
+* **TOP filter structure (for top N results):**
+  - `filterType`: "TOP"
+  - `field`: {{"fieldCaption": "FieldName"}} (the dimension to get top N of)
+  - `topN`: number (how many top items to return, e.g., 10 for top 10)
+  - `orderBy`: {{"fieldCaption": "MeasureName", "function": "SUM"}} (the measure to order by)
+  - **CRITICAL:** Use "TOP" as filterType, NOT "topFilter" as a key name
+  - **NEVER use "topFilter" as a key** - this will cause validation errors
+  - Example: {{"filterType": "TOP", "field": {{"fieldCaption": "Customer"}}, "topN": 10, "orderBy": {{"fieldCaption": "Sales", "function": "SUM"}}}}
 * **Error Recovery:** If a tool call fails, explain the issue to the user and suggest alternative approaches
 
 * **SET filter structure (for categorical/dimension fields with multiple values):**
