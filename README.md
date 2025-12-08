@@ -3,6 +3,7 @@
 A streaming AI chat interface for Tableau data analysis, featuring real-time agent thinking steps and enhanced user experience. Built on the Tableau MCP (Model Context Protocol) with LangChain integration.
 
 > **Credits:** This project is derived from [Will Sutton](https://github.com/wjsutton)'s excellent [tableau_mcp_starter_kit](https://github.com/TheInformationLab/tableau_mcp_starter_kit) created at [The Information Lab](https://github.com/TheInformationLab). The original work provided the foundation for Tableau MCP integration with LangChain.
+![tabby zoomed copy (1)](https://github.com/user-attachments/assets/c936f3d3-88cc-4238-9e9e-3d6584da08ee)
 
 ## ✨ Key Features
 
