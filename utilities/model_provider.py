@@ -67,22 +67,24 @@ def _get_openai_llm(model_name: str, temperature: float) -> BaseChatModel:
 
 
 def _get_aws_bedrock_llm(model_name: str, temperature: float) -> BaseChatModel:
-    """Initialize AWS Bedrock ChatBedrock model"""
-    from langchain_aws import ChatBedrock
+    """Initialize AWS Bedrock ChatBedrockConverse model
     
-    # Check for required AWS credentials
-    access_key = os.getenv("AWS_ACCESS_KEY_ID")
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-    region = os.getenv("AWS_REGION", "us-east-1")
+    ChatBedrockConverse is required for tool calling with Claude models
+    as it properly handles tool result message formatting and avoids the
+    ValidationException error with tool_result.content.text.id.
+    """
+    from langchain_aws import ChatBedrockConverse
     
-    if not access_key or not secret_key:
-        raise ValueError(
-            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables "
-            "are required for AWS Bedrock provider"
-        )    
-    logger.info(f"Initializing AWS Bedrock model: {model_name} in region {region_name}")
+    region_name = os.getenv("AWS_REGION", "us-east-1")
     
-    # ChatBedrock uses boto3, which will automatically use the AWS_* environment variables
-    # We can optionally pass region_name explicitly if needed
-    return ChatBedrock(model_id=model_name, temperature=temperature)
+    logger.info(f"Initializing AWS Bedrock model: {model_name} in region {region_name} using ChatBedrockConverse")
+    
+    # ChatBedrockConverse uses boto3, which will automatically use the AWS_* environment variables
+    # It properly handles tool result formatting for Claude models (3.7, 4.5, etc.)
+    # This avoids ValidationException errors with tool_result message formatting
+    return ChatBedrockConverse(
+        model_id=model_name,
+        temperature=temperature,
+        region_name=region_name
+    )
 
