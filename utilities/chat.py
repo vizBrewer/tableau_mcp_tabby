@@ -1,3 +1,57 @@
+async def repair_incomplete_tool_calls(agent, thread_id, logger):
+    """
+    Check agent state for incomplete tool calls and inject error ToolMessages.
+    
+    This ensures that any AIMessage with tool_calls that don't have corresponding
+    ToolMessages get error responses, allowing the agent to continue gracefully.
+    """
+    try:
+        from langchain_core.messages import ToolMessage, AIMessage
+        
+        config = {"configurable": {"thread_id": thread_id}}
+        state_snapshot = agent.get_state(config)
+        
+        if not state_snapshot or not state_snapshot.values:
+            return False
+        
+        messages = state_snapshot.values.get("messages", [])
+        if not messages:
+            return False
+        
+        # Track which tool calls have responses
+        tool_call_ids_with_responses = {msg.tool_call_id for msg in messages if isinstance(msg, ToolMessage)}
+        tool_calls_needing_responses = []
+        
+        # Find AIMessages with tool_calls that don't have responses
+        for message in messages:
+            if isinstance(message, AIMessage) and hasattr(message, 'tool_calls') and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    tool_call_id = tool_call.get('id') if isinstance(tool_call, dict) else getattr(tool_call, 'id', None)
+                    tool_name = tool_call.get('name') if isinstance(tool_call, dict) else getattr(tool_call, 'name', 'unknown')
+                    if tool_call_id and tool_call_id not in tool_call_ids_with_responses:
+                        tool_calls_needing_responses.append((tool_call_id, tool_name))
+        
+        # Inject error ToolMessages for incomplete tool calls
+        if tool_calls_needing_responses:
+            logger.warning(f"[{thread_id}] Found {len(tool_calls_needing_responses)} incomplete tool call(s), injecting error responses")
+            error_tool_messages = [
+                ToolMessage(
+                    content=f"Tool call to '{tool_name}' failed to complete. This may have been due to a network error, permission issue (403), or service unavailability. Please try again or use a different approach.",
+                    tool_call_id=tool_call_id,
+                    name=tool_name
+                )
+                for tool_call_id, tool_name in tool_calls_needing_responses
+            ]
+            agent.update_state(config, {"messages": list(messages) + error_tool_messages})
+            logger.info(f"[{thread_id}] Injected {len(error_tool_messages)} error ToolMessage(s) to repair state")
+            return True
+        
+        return False
+        
+    except Exception as repair_error:
+        logger.warning(f"[{thread_id}] Error checking/repairing incomplete tool calls: {str(repair_error)}")
+        return False
+
 
 # LEGACY/TESTING: Non-streaming response function (currently not used - frontend uses stream_agent_response)
 # Uncomment if you need a non-streaming endpoint for testing purposes
@@ -86,6 +140,9 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
             logger.warning(f"[{thread_id}] Detected MCP error -32602, replacing with user-friendly message")
             final_response = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
         
+        # Repair incomplete tool calls - check state for orphaned tool calls and inject error responses
+        await repair_incomplete_tool_calls(agent, thread_id, logger)
+        
         yield {
             "type": "final",
             "content": final_response,
@@ -109,3 +166,6 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
             "content": final_error_message,
             "is_final": True
         }
+        
+        # Repair incomplete tool calls after error
+        await repair_incomplete_tool_calls(agent, thread_id, logger)
