@@ -6,10 +6,32 @@ console.log("script.js IS LOADED");
 let THREAD_ID = null;
 
 // -----------------------------
+// Status indicator helpers
+// -----------------------------
+function setStatus(text, variant = "ok") {
+    const el = document.getElementById('statusIndicator');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('status-ok', 'status-thinking', 'status-error');
+    if (variant === 'thinking') {
+        el.classList.add('status-thinking');
+    } else if (variant === 'error') {
+        el.classList.add('status-error');
+    } else {
+        el.classList.add('status-ok');
+    }
+}
+
+// -----------------------------
 // Initialize session on page load
 // -----------------------------
 document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('messageInput').focus();
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetSession);
+    }
+    setStatus('● Connecting…', 'thinking');
     await initSession();
 });
 
@@ -24,10 +46,23 @@ async function initSession() {
         THREAD_ID = data.thread_id;
         
         console.log("Initialized conversation thread:", THREAD_ID);
+        setStatus('● Connected', 'ok');
     } catch (err) {
         console.error("Failed to initialize session:", err);
         addMessage('Could not start chat session. Please refresh.', 'bot');
+        setStatus('● Error connecting', 'error');
     }
+}
+
+// -----------------------------
+// Reset session
+// -----------------------------
+async function resetSession() {
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = '';
+    THREAD_ID = null;
+    setStatus('● Connecting…', 'thinking');
+    await initSession();
 }
 
 // -----------------------------
@@ -43,10 +78,11 @@ async function sendMessage() {
     addMessage(message, 'user');
     input.value = '';
 
-    // Disable send button
+    // Disable send button and show thinking state
     const btn = document.getElementById('sendBtn');
     btn.disabled = true;
     btn.textContent = 'Thinking...';
+    setStatus('● Thinking…', 'thinking');
 
     // Create a placeholder for the streaming response
     const streamingContext = addStreamingMessage();
@@ -115,11 +151,85 @@ async function sendMessage() {
             content: '⚠️ Could not connect to the server. Refresh the page to start a new session.',
             is_final: true
         });
+        setStatus('● Error during response', 'error');
     }
 
     // Re-enable button
     btn.disabled = false;
     btn.textContent = 'Send';
+    if (THREAD_ID) {
+        // Only mark as connected again if we still have a valid session
+        setStatus('● Connected', 'ok');
+    }
+}
+
+// -----------------------------
+// Simple markdown-ish formatter
+// -----------------------------
+function formatMarkdown(text) {
+    if (!text) return '';
+    // Escape HTML first
+    const escapeHtml = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+
+    const lines = text.split('\n');
+    const parts = [];
+    let inList = false;
+
+    for (let line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            if (inList) {
+                parts.push('</ul>');
+                inList = false;
+            }
+            parts.push('<br>');
+            continue;
+        }
+        // headings
+        if (trimmed.startsWith('### ')) {
+            if (inList) { parts.push('</ul>'); inList = false; }
+            parts.push('<h3>' + escapeHtml(trimmed.slice(4)) + '</h3>');
+            continue;
+        }
+        if (trimmed.startsWith('## ')) {
+            if (inList) { parts.push('</ul>'); inList = false; }
+            parts.push('<h2>' + escapeHtml(trimmed.slice(3)) + '</h2>');
+            continue;
+        }
+        if (trimmed.startsWith('# ')) {
+            if (inList) { parts.push('</ul>'); inList = false; }
+            parts.push('<h1>' + escapeHtml(trimmed.slice(2)) + '</h1>');
+            continue;
+        }
+        // list items
+        if (/^[-*]\s+/.test(trimmed)) {
+            if (!inList) {
+                parts.push('<ul>');
+                inList = true;
+            }
+            const item = trimmed.replace(/^[-*]\s+/, '');
+            parts.push('<li>' + inlineMd(escapeHtml(item)) + '</li>');
+            continue;
+        } else if (inList) {
+            parts.push('</ul>');
+            inList = false;
+        }
+        // normal paragraph
+        parts.push('<p>' + inlineMd(escapeHtml(trimmed)) + '</p>');
+    }
+    if (inList) parts.push('</ul>');
+    return parts.join('');
+}
+
+function inlineMd(s) {
+    return s
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
 }
 
 // -----------------------------
@@ -129,7 +239,7 @@ function addMessage(text, type) {
     const chatBox = document.getElementById('chatBox');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    messageDiv.innerHTML = text.replace(/\n/g, '<br>');
+    messageDiv.innerHTML = formatMarkdown(text);
     chatBox.appendChild(messageDiv);
 
     // Auto scroll to bottom
@@ -158,18 +268,31 @@ function updateStreamingMessage(streamingElement, data) {
     
     if (data.type === 'step') {
         // Update with intermediate step content
-        streamingElement.innerHTML = `<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> ${data.content.replace(/\n/g, '<br>')}</div>`;
+        streamingElement.innerHTML = `<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> ${formatMarkdown(data.content)}</div>`;
         // Only scroll if it is an intermediate step and not the final response
         const chatBox = document.getElementById('chatBox');
         chatBox.scrollTop = chatBox.scrollHeight;
     } else if (data.type === 'final') {
         // Replace with final response
         streamingElement.classList.remove('streaming');
-        streamingElement.innerHTML = data.content.replace(/\n/g, '<br>');
+        streamingElement.innerHTML = formatMarkdown(data.content);
     }
     
     const chatBox = document.getElementById('chatBox');
     // chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// -----------------------------
+// Suggested uses panel function (from experimental project)
+// -----------------------------
+function toggleSuggestedUses() {
+    const content = document.getElementById('suggested-uses-content');
+    const toggle = document.getElementById('suggested-uses-toggle');
+    if (content && toggle) {
+        content.classList.toggle('collapsed');
+        toggle.textContent = content.classList.contains('collapsed') ? '▼' : '▲';
+        toggle.classList.toggle('collapsed', content.classList.contains('collapsed'));
+    }
 }
 
 // -----------------------------

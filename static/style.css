@@ -52,12 +52,15 @@ body.in-extension .container {
 header {
     background: #2c3e50;
     color: white;
-    padding: 2px;
+    padding: 8px 16px;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 header h1 {
-    margin: 0 0 10px 0;
+    margin: 0 0 4px 0;
     font-size: 1.5em;
     display: flex;
     align-items: center;
@@ -72,6 +75,114 @@ header h1 img {
 header p {
     margin: 0;
     opacity: 0.9;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+}
+
+.status-indicator {
+    font-weight: 500;
+}
+
+.status-indicator.status-ok {
+    color: #28a745;
+}
+
+.status-indicator.status-thinking {
+    color: #ffc107;
+}
+
+.status-indicator.status-error {
+    color: #dc3545;
+}
+
+.reset-btn {
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #ced4da;
+    background: #ffffff;
+    color: #2c3e50;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.reset-btn:hover {
+    background: #e9ecef;
+}
+
+/* Suggested uses panel (from experimental project) */
+.suggested-uses-panel {
+    background: #f4f6fb;
+    border: 1px solid #dfe4ef;
+    border-radius: 8px;
+    margin: 0 20px;
+    box-shadow: 0 4px 16px rgba(19, 35, 61, 0.08);
+}
+
+.suggested-uses-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    color: #2a3c69;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.suggested-uses-header:hover {
+    background: rgba(42, 60, 105, 0.07);
+}
+
+.suggested-uses-content {
+    padding: 0 20px 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.suggested-uses-content.collapsed {
+    display: none;
+}
+
+.suggested-uses-category {
+    background: white;
+    border-radius: 6px;
+    padding: 12px 14px;
+    border: 1px solid #e3e7f0;
+    min-height: 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.suggested-uses-category h4 {
+    margin: 0;
+    font-size: 13px;
+    color: #1a73e8;
+    font-weight: 700;
+}
+
+.suggested-uses-category p {
+    margin: 0;
+    font-size: 12px;
+    color: #465272;
+    line-height: 1.4;
+}
+
+.toggle-icon {
+    font-size: 14px;
+    transition: transform 0.2s ease;
+}
+
+.toggle-icon.collapsed {
+    transform: rotate(-90deg);
 }
 
 /* Chat message styles */
@@ -243,6 +354,10 @@ img.thinking-cat {
     }
     header h1 {
         font-size: 1.5em;
+    }
+    .suggested-uses-content {
+        grid-template-columns: 1fr;
+        gap: 12px;
     }
     .chat-box {
         padding: 15px;

@@ -25,6 +25,7 @@ logger = setup_logging("web_app.log")
 from utilities.prompt import AGENT_SYSTEM_PROMPT
 from utilities.chat import stream_agent_response
 from utilities.model_provider import get_llm
+from utilities.tool_wrapper import wrap_mcp_tools
 # LEGACY/TESTING: format_agent_response is commented out - uncomment if you need non-streaming endpoint
 # from utilities.chat import format_agent_response
 
@@ -86,6 +87,10 @@ async def lifespan(app: FastAPI):
 
                 # Get tools, filter tools using the .env config
                 mcp_tools = await load_mcp_tools(client_session)
+                
+                # Wrap tools with error handling to convert HTTP errors to ToolException
+                mcp_tools = wrap_mcp_tools(mcp_tools)
+                logger.info(f"Wrapped {len(mcp_tools)} MCP tools with error handling")
                 
                 # Debug: Log ALL tool descriptions to understand what the agent sees
                 # logger.info(f"Loaded {len(mcp_tools)} MCP tools")

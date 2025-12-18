@@ -14,10 +14,38 @@
 <body>
     <div class="container">
         <header>
-            <h1><img src="static/favicon.ico" alt="tabby cat face" width="50"/> <i class="fa-solid fa-chart-column" aria-hidden="true"></i>  Tabby Data Assistant <i class="fa-solid fa-magnifying-glass-chart"></i> 
-                </i> </h1>
-                <!-- <i class="fa-solid fa-shield-cat"> -->
+            <h1>
+                <img src="static/favicon.ico" alt="tabby cat face" width="50"/>
+                <i class="fa-solid fa-chart-column" aria-hidden="true"></i>
+                Tabby Data Assistant
+                <i class="fa-solid fa-magnifying-glass-chart"></i>
+            </h1>
+            <div class="status-bar">
+                <span id="statusIndicator" class="status-indicator">● Connecting…</span>
+                <button id="resetBtn" class="reset-btn" type="button">Reset Session</button>
+            </div>
         </header>
+
+        <div class="suggested-uses-panel">
+            <div class="suggested-uses-header" onclick="toggleSuggestedUses()">
+                <span>💡 Suggested uses</span>
+                <span class="toggle-icon" id="suggested-uses-toggle">▼</span>
+            </div>
+            <div class="suggested-uses-content collapsed" id="suggested-uses-content">
+                <div class="suggested-uses-category">
+                    <h4>Best practices</h4>
+                    <p>Coming soon: curated guidance on asking high-impact, Tableau-aware questions.</p>
+                </div>
+                <div class="suggested-uses-category">
+                    <h4>What to ask</h4>
+                    <p>Coming soon: example prompts for trends, comparisons, and anomaly detection.</p>
+                </div>
+                <div class="suggested-uses-category">
+                    <h4>What to avoid</h4>
+                    <p>Coming soon: reminders about unsupported requests, sensitive fields, and performance-sensitive filters.</p>
+                </div>
+            </div>
+        </div>
 
         <div class="chat-box" id="chatBox">
             <div class="message bot">

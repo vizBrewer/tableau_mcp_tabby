@@ -140,6 +140,13 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
             logger.warning(f"[{thread_id}] Detected MCP error -32602, replacing with user-friendly message")
             final_response = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
         
+        # Filter out LangGraph internal error messages about incomplete tool calls
+        # These are state repair messages that shouldn't be shown to users
+        if "Found AIMessages with tool_calls" in final_response or "do not have a corresponding ToolMessage" in final_response:
+            logger.warning(f"[{thread_id}] Detected LangGraph tool call error message, filtering it out")
+            # Replace with a user-friendly message
+            final_response = "I encountered an issue processing your request. I've recovered and can continue - please try asking your question again or rephrase it."
+        
         # Repair incomplete tool calls - check state for orphaned tool calls and inject error responses
         await repair_incomplete_tool_calls(agent, thread_id, logger)
         
@@ -157,6 +164,10 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
         error_str = str(e)
         if "MCP error -32602" in error_str or "error -32602" in error_str:
             final_error_message = "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
+        elif "Found AIMessages with tool_calls" in error_str or "do not have a corresponding ToolMessage" in error_str:
+            # Filter out LangGraph internal error messages
+            logger.warning(f"[{thread_id}] Detected LangGraph tool call error in exception, filtering it out")
+            final_error_message = "I encountered an issue processing your request. I've recovered and can continue - please try asking your question again or rephrase it."
         else:
             final_error_message = f"I encountered an error: {error_str[:200]}"  # Limit length for other errors
         
