@@ -4,6 +4,8 @@
 console.log("script.js IS LOADED");
 // Persistent thread ID for conversation state
 let THREAD_ID = null;
+// AbortController for stopping requests
+let currentAbortController = null;
 
 // -----------------------------
 // Status indicator helpers
@@ -78,14 +80,21 @@ async function sendMessage() {
     addMessage(message, 'user');
     input.value = '';
 
-    // Disable send button and show thinking state
+    // Disable send button and show stop button
     const btn = document.getElementById('sendBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const input_field = document.getElementById('messageInput');
     btn.disabled = true;
-    btn.textContent = 'Thinking...';
+    input_field.disabled = true;
+    btn.style.display = 'none'; // Hide send button
+    stopBtn.style.display = 'inline-block'; // Show stop button
     setStatus('● Thinking…', 'thinking');
 
     // Create a placeholder for the streaming response
     const streamingContext = addStreamingMessage();
+
+    // Create new AbortController for this request
+    currentAbortController = new AbortController();
 
     try {
         const response = await fetch('/chat/stream', {
@@ -94,7 +103,8 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: message,
                 thread_id: THREAD_ID
-            })
+            }),
+            signal: currentAbortController.signal
         });
 
         if (!response.ok) {
@@ -146,20 +156,45 @@ async function sendMessage() {
         }
     } catch (error) {
         console.error('Error:', error);
-        updateStreamingMessage(streamingContext, {
-            type: 'final',
-            content: '⚠️ Could not connect to the server. Refresh the page to start a new session.',
-            is_final: true
-        });
-        setStatus('● Error during response', 'error');
+        
+        // Check if it was aborted by user
+        if (error.name === 'AbortError') {
+            updateStreamingMessage(streamingContext, {
+                type: 'final',
+                content: '⏹️ Generation stopped by user.',
+                is_final: true
+            });
+            setStatus('● Connected', 'ok');
+        } else {
+            updateStreamingMessage(streamingContext, {
+                type: 'final',
+                content: '⚠️ Could not connect to the server. Refresh the page to start a new session.',
+                is_final: true
+            });
+            setStatus('● Error during response', 'error');
+        }
+    } finally {
+        // Re-enable buttons and restore UI
+        currentAbortController = null;
+        btn.disabled = false;
+        input_field.disabled = false;
+        btn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
+        input_field.focus();
+        
+        if (THREAD_ID) {
+            setStatus('● Connected', 'ok');
+        }
     }
+}
 
-    // Re-enable button
-    btn.disabled = false;
-    btn.textContent = 'Send';
-    if (THREAD_ID) {
-        // Only mark as connected again if we still have a valid session
-        setStatus('● Connected', 'ok');
+// -----------------------------
+// Stop generation
+// -----------------------------
+function stopGeneration() {
+    if (currentAbortController) {
+        console.log('Stopping generation...');
+        currentAbortController.abort();
     }
 }
 

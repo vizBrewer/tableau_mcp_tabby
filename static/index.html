@@ -69,6 +69,9 @@
             <input type="text" id="messageInput" placeholder="Type your question here..."
                 onkeypress="handleEnter(event)">
             <button onclick="sendMessage()" id="sendBtn">Send</button>
+            <button onclick="stopGeneration()" id="stopBtn" class="stop-btn" style="display: none;">
+                <i class="fa-solid fa-stop"></i> Stop
+            </button>
         </div>
     </div>
 

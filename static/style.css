@@ -363,6 +363,30 @@ img.thinking-cat {
     cursor: not-allowed;
 }
 
+/* Stop button styling */
+.stop-btn {
+    background: #dc3545 !important;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.2s;
+}
+
+.stop-btn:hover {
+    background: #c82333 !important;
+}
+
+.stop-btn i {
+    font-size: 14px;
+}
+
 /* Responsive for smaller screens */
 @media (max-width: 600px) {
     .container {
