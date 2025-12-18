@@ -12,7 +12,6 @@ from mcp.client.streamable_http import streamablehttp_client
 # LangChain Libraries
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.prebuilt import create_react_agent
-from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.tools import tool
@@ -25,9 +24,11 @@ logger = setup_logging("web_app.log")
 from utilities.prompt import AGENT_SYSTEM_PROMPT
 from utilities.chat import stream_agent_response
 from utilities.model_provider import get_llm
-from utilities.tool_wrapper import wrap_mcp_tools
 # LEGACY/TESTING: format_agent_response is commented out - uncomment if you need non-streaming endpoint
 # from utilities.chat import format_agent_response
+
+# Tool error handling
+from langgraph.prebuilt.tool_node import ToolNode
 
 # Load Environment and set MCP endpoint
 import os
@@ -87,10 +88,7 @@ async def lifespan(app: FastAPI):
 
                 # Get tools, filter tools using the .env config
                 mcp_tools = await load_mcp_tools(client_session)
-                
-                # Wrap tools with error handling to convert HTTP errors to ToolException
-                mcp_tools = wrap_mcp_tools(mcp_tools)
-                logger.info(f"Wrapped {len(mcp_tools)} MCP tools with error handling")
+                logger.info(f"Loaded {len(mcp_tools)} MCP tools")
                 
                 # Debug: Log ALL tool descriptions to understand what the agent sees
                 # logger.info(f"Loaded {len(mcp_tools)} MCP tools")
@@ -119,9 +117,18 @@ async def lifespan(app: FastAPI):
                 # Initialize LLM using model provider utility
                 llm = get_llm()
 
-                # Create the agent
+                # Create tool node with error handling - errors will be returned as ToolMessages
+                # This allows the agent to see the error and retry with a different approach
+                tool_node = ToolNode(mcp_tools, handle_tool_errors=True)
+
+                # Create the agent with error-aware tool node
                 checkpointer = InMemorySaver()
-                agent = create_react_agent(model=llm, tools=mcp_tools, prompt=AGENT_SYSTEM_PROMPT, checkpointer=checkpointer)
+                agent = create_react_agent(
+                    model=llm, 
+                    tools=tool_node,  # Use ToolNode instead of raw tools
+                    prompt=AGENT_SYSTEM_PROMPT, 
+                    checkpointer=checkpointer
+                )
                 
                 yield
         
