@@ -155,10 +155,9 @@ async function sendMessage() {
             }
         }
     } catch (error) {
-        console.error('Error:', error);
-        
         // Check if it was aborted by user
         if (error.name === 'AbortError') {
+            console.log('Generation stopped by user');
             updateStreamingMessage(streamingContext, {
                 type: 'final',
                 content: '⏹️ Generation stopped by user.',
@@ -166,6 +165,7 @@ async function sendMessage() {
             });
             setStatus('● Connected', 'ok');
         } else {
+            console.error('Error:', error);
             updateStreamingMessage(streamingContext, {
                 type: 'final',
                 content: '⚠️ Could not connect to the server. Refresh the page to start a new session.',
