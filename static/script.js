@@ -201,7 +201,35 @@ function stopGeneration() {
 // -----------------------------
 // Simple markdown-ish formatter
 // -----------------------------
+/** Bedrock / multimodal: content may be a string or list of {type,text|reasoning_content} blocks. */
+function stringifyStreamContent(content) {
+    if (content == null || content === '') return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        const parts = [];
+        for (const block of content) {
+            if (typeof block === 'string') {
+                parts.push(block);
+            } else if (block && typeof block === 'object') {
+                if (block.type === 'text' && typeof block.text === 'string') {
+                    parts.push(block.text);
+                } else if (block.type === 'reasoning_content' && block.reasoning_content != null) {
+                    const rc = block.reasoning_content;
+                    if (typeof rc === 'string') parts.push(rc);
+                    else if (typeof rc.text === 'string') parts.push(rc.text);
+                }
+            }
+        }
+        return parts.join('\n');
+    }
+    if (typeof content === 'object' && content.type === 'text' && typeof content.text === 'string') {
+        return content.text;
+    }
+    return String(content);
+}
+
 function formatMarkdown(text) {
+    text = stringifyStreamContent(text);
     if (!text) return '';
     // Escape HTML first
     const escapeHtml = (str) => {

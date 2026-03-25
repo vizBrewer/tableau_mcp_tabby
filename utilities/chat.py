@@ -1,3 +1,35 @@
+def stringify_ai_content(content) -> str:
+    """
+    Flatten AIMessage.content for SSE/JSON: Bedrock (and some providers) use a list
+    of blocks (e.g. reasoning_content, text) instead of a plain string.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                btype = block.get("type")
+                if btype == "text" and isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+                elif btype == "reasoning_content":
+                    rc = block.get("reasoning_content")
+                    if isinstance(rc, dict) and isinstance(rc.get("text"), str):
+                        parts.append(rc["text"])
+                    elif isinstance(rc, str):
+                        parts.append(rc)
+            elif hasattr(block, "text") and isinstance(getattr(block, "text", None), str):
+                parts.append(block.text)
+        return "\n".join(parts)
+    if isinstance(content, dict) and content.get("type") == "text" and isinstance(content.get("text"), str):
+        return content["text"]
+    return str(content)
+
+
 async def repair_incomplete_tool_calls(agent, thread_id, logger):
     """
     Check agent state for incomplete tool calls and inject error ToolMessages.
@@ -122,13 +154,14 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
                     # Stream AI thinking/reasoning
                     if hasattr(message, 'type') and message.type == 'ai':
                         if hasattr(message, 'content') and message.content:
-                            # Yield intermediate thinking
-                            yield {
-                                "type": "step",
-                                "content": message.content,
-                                "is_final": False
-                            }
-                            final_response = message.content
+                            text = stringify_ai_content(message.content)
+                            if text:
+                                yield {
+                                    "type": "step",
+                                    "content": text,
+                                    "is_final": False
+                                }
+                                final_response = text
         
         # Send final response
         if not final_response:
