@@ -172,6 +172,12 @@ def _extract_tables_from_any(content: Any) -> List[dict]:
 
 
 def extract_tables_from_tool_message(message: Any) -> List[dict]:
+    """Skip tabular extraction for view-image tools — metadata shapes confuse auto-charts."""
+    tool_name = getattr(message, "name", None) or ""
+    if isinstance(tool_name, str):
+        tl = tool_name.lower().replace("_", "-")
+        if "view-image" in tl or tl.endswith("get-view-image"):
+            return []
     tables: List[dict] = []
     for table in _extract_tables_from_any(getattr(message, "content", None)):
         tables.append(table)

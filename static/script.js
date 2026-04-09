@@ -486,7 +486,12 @@ function updateStreamingMessage(streamingElement, data) {
         // Replace with final response
         streamingElement.classList.remove('streaming');
         streamingElement.innerHTML = formatChatReply(data.content, data.images);
-        renderCharts(streamingElement, data.tables);
+        // Auto-charts from tabular tool results: skip when this turn includes view images
+        // (e.g. get-view-image) so we don't stack a spurious chart under the dashboard snapshot.
+        const hasImages = Array.isArray(data.images) && data.images.length > 0;
+        if (!hasImages) {
+            renderCharts(streamingElement, data.tables);
+        }
     }
     
     const chatBox = document.getElementById('chatBox');
