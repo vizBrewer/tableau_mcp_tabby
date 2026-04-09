@@ -288,6 +288,153 @@ function formatMarkdown(text) {
     return parts.join('');
 }
 
+function escapeAttr(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;');
+}
+
+function renderImage(src, alt = 'View image') {
+    if (typeof src !== 'string' || !src.startsWith('data:image/')) return '';
+    return `<figure class="chat-image-wrap"><img class="chat-image" alt="${escapeAttr(alt)}" src="${escapeAttr(src)}"></figure>`;
+}
+
+function stripMarkdownDataImages(text) {
+    if (typeof text !== 'string' || !text) return text;
+    // Remove markdown image tags that embed data URLs so we only show rendered images.
+    return text
+        .replace(/!\[[^\]]*\]\(\s*data:image\/[a-zA-Z0-9.+-]+;base64,[^)]*\)/g, '')
+        .trim();
+}
+
+function formatChatReply(text, images) {
+    const cleanedText = stripMarkdownDataImages(text || '');
+    let html = formatMarkdown(cleanedText);
+    if (Array.isArray(images) && images.length) {
+        for (const src of images) {
+            html += renderImage(src);
+        }
+    }
+    return html;
+}
+
+function toNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const cleaned = value.replace(/[$,%\s,]/g, '');
+        const n = Number(cleaned);
+        return Number.isFinite(n) ? n : null;
+    }
+    return null;
+}
+
+function toDateMs(value) {
+    if (typeof value !== 'string' && typeof value !== 'number') return null;
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function inferChartConfig(table) {
+    if (!table || !Array.isArray(table.rows) || table.rows.length < 2) return null;
+    const rows = table.rows.slice(0, 80);
+    const columns = Object.keys(rows[0] || {});
+    if (!columns.length) return null;
+
+    const numericCols = columns.filter((col) => {
+        let ok = 0;
+        for (const row of rows) if (toNumber(row[col]) !== null) ok += 1;
+        return ok >= Math.max(2, Math.floor(rows.length * 0.5));
+    });
+    if (!numericCols.length) return null;
+
+    const dateCols = columns.filter((col) => {
+        let ok = 0;
+        for (const row of rows) if (toDateMs(row[col]) !== null) ok += 1;
+        return ok >= Math.max(2, Math.floor(rows.length * 0.6));
+    });
+
+    if (dateCols.length) {
+        const dateCol = dateCols[0];
+        const valueCol = numericCols.find((c) => c !== dateCol) || numericCols[0];
+        const points = rows
+            .map((r) => ({ t: toDateMs(r[dateCol]), x: r[dateCol], y: toNumber(r[valueCol]) }))
+            .filter((p) => p.t !== null && p.y !== null)
+            .sort((a, b) => a.t - b.t);
+        if (points.length < 2) return null;
+        return {
+            type: 'line',
+            title: `${table.title || 'Time Series'}: ${valueCol} over ${dateCol}`,
+            labels: points.map((p) => String(p.x)),
+            datasets: [{
+                label: valueCol,
+                data: points.map((p) => p.y),
+                borderColor: '#4f46e5',
+                backgroundColor: 'rgba(79, 70, 229, 0.12)',
+                tension: 0.25,
+                fill: true
+            }]
+        };
+    }
+
+    const categoryCol = columns.find((c) => !numericCols.includes(c)) || columns[0];
+    const valueCol = numericCols[0];
+    const bars = rows
+        .map((r) => ({ c: r[categoryCol], y: toNumber(r[valueCol]) }))
+        .filter((p) => p.c != null && p.y !== null);
+    if (bars.length < 2) return null;
+    return {
+        type: 'bar',
+        title: `${table.title || 'Category Metrics'}: ${valueCol} by ${categoryCol}`,
+        labels: bars.slice(0, 30).map((p) => String(p.c)),
+        datasets: [{
+            label: valueCol,
+            data: bars.slice(0, 30).map((p) => p.y),
+            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1
+        }]
+    };
+}
+
+function renderCharts(containerEl, tables) {
+    if (!containerEl || !Array.isArray(tables) || !tables.length) return;
+    if (typeof Chart === 'undefined') return;
+    tables.forEach((table, index) => {
+        const config = inferChartConfig(table);
+        if (!config) return;
+        const wrap = document.createElement('figure');
+        wrap.className = 'chat-chart-wrap';
+        const caption = document.createElement('figcaption');
+        caption.className = 'chat-chart-caption';
+        caption.textContent = config.title;
+        const canvas = document.createElement('canvas');
+        canvas.className = 'chat-chart-canvas';
+        wrap.appendChild(caption);
+        wrap.appendChild(canvas);
+        containerEl.appendChild(wrap);
+        new Chart(canvas.getContext('2d'), {
+            type: config.type,
+            data: {
+                labels: config.labels,
+                datasets: config.datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { ticks: { maxRotation: 45, minRotation: 0 } },
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    });
+}
+
 function inlineMd(s) {
     return s
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -338,7 +485,8 @@ function updateStreamingMessage(streamingElement, data) {
     } else if (data.type === 'final') {
         // Replace with final response
         streamingElement.classList.remove('streaming');
-        streamingElement.innerHTML = formatMarkdown(data.content);
+        streamingElement.innerHTML = formatChatReply(data.content, data.images);
+        renderCharts(streamingElement, data.tables);
     }
     
     const chatBox = document.getElementById('chatBox');

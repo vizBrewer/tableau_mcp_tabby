@@ -261,6 +261,42 @@ img.thinking-cat {
     object-fit: contain;
 }
 
+.chat-image-wrap {
+    margin: 10px 0;
+    padding: 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.chat-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+.chat-chart-wrap {
+    margin: 12px 0;
+    padding: 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    background: #fff;
+    height: 320px;
+}
+
+.chat-chart-caption {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #343a40;
+    margin-bottom: 8px;
+}
+
+.chat-chart-canvas {
+    width: 100% !important;
+    height: calc(100% - 28px) !important;
+}
+
 .steps-container {
     display: flex;
     flex-direction: column;

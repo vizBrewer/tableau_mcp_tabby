@@ -1,4 +1,187 @@
-def stringify_ai_content(content) -> str:
+import json
+import re
+from typing import Any, List
+
+
+def _mcp_image_block_to_data_url(obj: Any) -> str | None:
+    """Convert known MCP image block shapes to a data URL."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict) and obj.get("type") == "image":
+        data = obj.get("data")
+        mime = obj.get("mimeType") or obj.get("mime_type") or "image/png"
+        if isinstance(data, str) and data.strip():
+            return f"data:{mime};base64,{data.strip()}"
+    if getattr(obj, "type", None) == "image":
+        data = getattr(obj, "data", None)
+        mime = getattr(obj, "mimeType", None) or getattr(obj, "mime_type", None) or "image/png"
+        if isinstance(data, str) and data.strip():
+            return f"data:{mime};base64,{data.strip()}"
+    return None
+
+
+_DATA_URI_IMAGE_RE = re.compile(r"data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+")
+_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]+=*$")
+
+
+def _extract_images_from_any(content: Any) -> List[str]:
+    """Extract data:image URLs from strings, dict/list content, or image blocks."""
+    found: List[str] = []
+    seen: set[str] = set()
+
+    def add(url: str) -> None:
+        normalized = re.sub(r"\s+", "", url.strip())
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        found.append(normalized)
+
+    def walk(value: Any) -> None:
+        if value is None:
+            return
+        block_url = _mcp_image_block_to_data_url(value)
+        if block_url:
+            add(block_url)
+            return
+        if isinstance(value, str):
+            for m in _DATA_URI_IMAGE_RE.finditer(value):
+                add(m.group(0))
+            compact = re.sub(r"\s+", "", value)
+            if len(compact) > 500 and _BASE64_RE.fullmatch(compact):
+                add("data:image/png;base64," + compact)
+            try:
+                decoded = json.loads(value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return
+            walk(decoded)
+            return
+        if isinstance(value, dict):
+            for _, sub in value.items():
+                walk(sub)
+            return
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(content)
+    return found
+
+
+def extract_images_from_tool_message(message: Any) -> List[str]:
+    urls: List[str] = []
+    for url in _extract_images_from_any(getattr(message, "content", None)):
+        if url not in urls:
+            urls.append(url)
+    for url in _extract_images_from_any(getattr(message, "artifact", None)):
+        if url not in urls:
+            urls.append(url)
+    return urls
+
+
+def _is_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _normalize_rows_dict_list(rows: Any, max_rows: int = 120) -> List[dict]:
+    if not isinstance(rows, list):
+        return []
+    normalized: List[dict] = []
+    for row in rows[:max_rows]:
+        if isinstance(row, dict):
+            clean = {str(k): v for k, v in row.items() if _is_scalar(v)}
+            if clean:
+                normalized.append(clean)
+    return normalized
+
+
+def _normalize_rows_with_columns(obj: dict, max_rows: int = 120) -> List[dict]:
+    columns = obj.get("columns")
+    rows = obj.get("rows")
+    if not isinstance(columns, list) or not isinstance(rows, list):
+        return []
+    col_names = [str(c) for c in columns]
+    normalized: List[dict] = []
+    for row in rows[:max_rows]:
+        if isinstance(row, list):
+            mapped = {}
+            for i, col in enumerate(col_names):
+                if i < len(row) and _is_scalar(row[i]):
+                    mapped[col] = row[i]
+            if mapped:
+                normalized.append(mapped)
+        elif isinstance(row, dict):
+            mapped = {str(k): v for k, v in row.items() if _is_scalar(v)}
+            if mapped:
+                normalized.append(mapped)
+    return normalized
+
+
+def _extract_tables_from_any(content: Any) -> List[dict]:
+    """Extract compact tabular data candidates from tool outputs."""
+    candidates: List[dict] = []
+    seen: set[str] = set()
+
+    def add_table(rows: List[dict], title: str = "Tool Result") -> None:
+        if len(rows) < 2:
+            return
+        # Require at least one numeric value somewhere for charting potential.
+        has_numeric = any(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for row in rows for v in row.values()
+        )
+        if not has_numeric:
+            return
+        key = json.dumps(rows[:20], sort_keys=True, default=str)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append({"title": title, "rows": rows})
+
+    def walk(value: Any, path_hint: str = "Tool Result") -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return
+            walk(decoded, path_hint)
+            return
+        if isinstance(value, list):
+            rows = _normalize_rows_dict_list(value)
+            if rows:
+                add_table(rows, path_hint)
+            for item in value:
+                walk(item, path_hint)
+            return
+        if isinstance(value, dict):
+            title = str(value.get("name") or value.get("title") or value.get("caption") or path_hint)
+            # Common tabular container shapes.
+            for key in ("data", "result", "results", "records", "items", "values"):
+                rows = _normalize_rows_dict_list(value.get(key))
+                if rows:
+                    add_table(rows, title)
+            rows = _normalize_rows_with_columns(value)
+            if rows:
+                add_table(rows, title)
+            for k, sub in value.items():
+                walk(sub, str(k))
+
+    walk(content)
+    return candidates
+
+
+def extract_tables_from_tool_message(message: Any) -> List[dict]:
+    tables: List[dict] = []
+    for table in _extract_tables_from_any(getattr(message, "content", None)):
+        tables.append(table)
+    for table in _extract_tables_from_any(getattr(message, "artifact", None)):
+        tables.append(table)
+    # Keep payload modest for SSE
+    return tables[:4]
+
+
+def stringify_ai_content(content, include_reasoning: bool = False) -> str:
     """
     Flatten AIMessage.content for SSE/JSON: Bedrock (and some providers) use a list
     of blocks (e.g. reasoning_content, text) instead of a plain string.
@@ -16,7 +199,7 @@ def stringify_ai_content(content) -> str:
                 btype = block.get("type")
                 if btype == "text" and isinstance(block.get("text"), str):
                     parts.append(block["text"])
-                elif btype == "reasoning_content":
+                elif btype == "reasoning_content" and include_reasoning:
                     rc = block.get("reasoning_content")
                     if isinstance(rc, dict) and isinstance(rc.get("text"), str):
                         parts.append(rc["text"])
@@ -123,6 +306,8 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
     logger.info(f"[{thread_id}] Starting stream for thread")
     
     final_response = ""
+    collected_images: List[str] = []
+    collected_tables: List[dict] = []
     seen_message_ids = set()
     initial_message_count = None
     
@@ -150,18 +335,28 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
                         
                     if message_id:
                         seen_message_ids.add(message_id)
+
+                    if getattr(message, "type", None) == "tool":
+                        for url in extract_images_from_tool_message(message):
+                            if url not in collected_images:
+                                collected_images.append(url)
+                        for table in extract_tables_from_tool_message(message):
+                            if table not in collected_tables:
+                                collected_tables.append(table)
                     
                     # Stream AI thinking/reasoning
                     if hasattr(message, 'type') and message.type == 'ai':
                         if hasattr(message, 'content') and message.content:
-                            text = stringify_ai_content(message.content)
-                            if text:
+                            step_text = stringify_ai_content(message.content, include_reasoning=True)
+                            final_text = stringify_ai_content(message.content, include_reasoning=False)
+                            if step_text:
                                 yield {
                                     "type": "step",
-                                    "content": text,
+                                    "content": step_text,
                                     "is_final": False
                                 }
-                                final_response = text
+                            if final_text:
+                                final_response = final_text
         
         # Send final response
         if not final_response:
@@ -186,6 +381,8 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
         yield {
             "type": "final",
             "content": final_response,
+            "images": collected_images,
+            "tables": collected_tables,
             "is_final": True
         }
         logger.info(f"[{thread_id}] Stream completed, final response length: {len(final_response)}")
@@ -208,6 +405,8 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
         yield {
             "type": "final",
             "content": final_error_message,
+            "images": collected_images,
+            "tables": collected_tables,
             "is_final": True
         }
         

@@ -162,6 +162,8 @@ class ChatResponse(BaseModel):
 
 
 
+
+
 @app.get("/")
 def home():
     """Serve the main HTML page"""
