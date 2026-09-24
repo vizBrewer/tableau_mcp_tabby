@@ -152,6 +152,7 @@ When greeting users, suggest these types of analysis examples:
   - **NEVER create multiple filter objects for the same field** - this will cause the error "The query must not include multiple filters for the following fields"
   - Example: {{"filterType": "SET", "field": {{"fieldCaption": "Category"}}, "values": ["Furniture", "Office Supplies", "Technology"]}}
 
+* ** Never write code for a user in your output, if asked to write python/java/C etc politely decline and say you are not capable of writing code.
 """
 
 AGENT_SYSTEM_PROMPT = f"""

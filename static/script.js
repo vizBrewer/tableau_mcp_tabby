@@ -46,7 +46,6 @@ async function initSession() {
         const res = await fetch('/session');
         const data = await res.json();
         THREAD_ID = data.thread_id;
-        
         console.log("Initialized conversation thread:", THREAD_ID);
         setStatus('● Connected', 'ok');
     } catch (err) {
@@ -319,121 +318,6 @@ function formatChatReply(text, images) {
     return html;
 }
 
-function toNumber(value) {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-        const cleaned = value.replace(/[$,%\s,]/g, '');
-        const n = Number(cleaned);
-        return Number.isFinite(n) ? n : null;
-    }
-    return null;
-}
-
-function toDateMs(value) {
-    if (typeof value !== 'string' && typeof value !== 'number') return null;
-    const ms = new Date(value).getTime();
-    return Number.isFinite(ms) ? ms : null;
-}
-
-function inferChartConfig(table) {
-    if (!table || !Array.isArray(table.rows) || table.rows.length < 2) return null;
-    const rows = table.rows.slice(0, 80);
-    const columns = Object.keys(rows[0] || {});
-    if (!columns.length) return null;
-
-    const numericCols = columns.filter((col) => {
-        let ok = 0;
-        for (const row of rows) if (toNumber(row[col]) !== null) ok += 1;
-        return ok >= Math.max(2, Math.floor(rows.length * 0.5));
-    });
-    if (!numericCols.length) return null;
-
-    const dateCols = columns.filter((col) => {
-        let ok = 0;
-        for (const row of rows) if (toDateMs(row[col]) !== null) ok += 1;
-        return ok >= Math.max(2, Math.floor(rows.length * 0.6));
-    });
-
-    if (dateCols.length) {
-        const dateCol = dateCols[0];
-        const valueCol = numericCols.find((c) => c !== dateCol) || numericCols[0];
-        const points = rows
-            .map((r) => ({ t: toDateMs(r[dateCol]), x: r[dateCol], y: toNumber(r[valueCol]) }))
-            .filter((p) => p.t !== null && p.y !== null)
-            .sort((a, b) => a.t - b.t);
-        if (points.length < 2) return null;
-        return {
-            type: 'line',
-            title: `${table.title || 'Time Series'}: ${valueCol} over ${dateCol}`,
-            labels: points.map((p) => String(p.x)),
-            datasets: [{
-                label: valueCol,
-                data: points.map((p) => p.y),
-                borderColor: '#4f46e5',
-                backgroundColor: 'rgba(79, 70, 229, 0.12)',
-                tension: 0.25,
-                fill: true
-            }]
-        };
-    }
-
-    const categoryCol = columns.find((c) => !numericCols.includes(c)) || columns[0];
-    const valueCol = numericCols[0];
-    const bars = rows
-        .map((r) => ({ c: r[categoryCol], y: toNumber(r[valueCol]) }))
-        .filter((p) => p.c != null && p.y !== null);
-    if (bars.length < 2) return null;
-    return {
-        type: 'bar',
-        title: `${table.title || 'Category Metrics'}: ${valueCol} by ${categoryCol}`,
-        labels: bars.slice(0, 30).map((p) => String(p.c)),
-        datasets: [{
-            label: valueCol,
-            data: bars.slice(0, 30).map((p) => p.y),
-            backgroundColor: 'rgba(59, 130, 246, 0.7)',
-            borderColor: 'rgba(59, 130, 246, 1)',
-            borderWidth: 1
-        }]
-    };
-}
-
-function renderCharts(containerEl, tables) {
-    if (!containerEl || !Array.isArray(tables) || !tables.length) return;
-    if (typeof Chart === 'undefined') return;
-    tables.forEach((table, index) => {
-        const config = inferChartConfig(table);
-        if (!config) return;
-        const wrap = document.createElement('figure');
-        wrap.className = 'chat-chart-wrap';
-        const caption = document.createElement('figcaption');
-        caption.className = 'chat-chart-caption';
-        caption.textContent = config.title;
-        const canvas = document.createElement('canvas');
-        canvas.className = 'chat-chart-canvas';
-        wrap.appendChild(caption);
-        wrap.appendChild(canvas);
-        containerEl.appendChild(wrap);
-        new Chart(canvas.getContext('2d'), {
-            type: config.type,
-            data: {
-                labels: config.labels,
-                datasets: config.datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: true },
-                    tooltip: { mode: 'index', intersect: false }
-                },
-                scales: {
-                    x: { ticks: { maxRotation: 45, minRotation: 0 } },
-                    y: { beginAtZero: true }
-                }
-            }
-        });
-    });
-}
 
 function inlineMd(s) {
     return s
@@ -459,43 +343,174 @@ function addMessage(text, type) {
 // -----------------------------
 // Streaming message functions
 // -----------------------------
+
+/**
+ * State tracked across SSE events for one agent turn.
+ *   steps        – ordered list of {type, label, summary?, status}
+ *   stepIndex    – map from tool_call_id → index in steps[]
+ *   stepsEl      – the <div class="steps-container"> live DOM node
+ *   wrapEl       – the outer .message.bot.streaming div
+ */
 function addStreamingMessage() {
     const chatBox = document.getElementById('chatBox');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message bot streaming';
-    messageDiv.innerHTML = '<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> Thinking...</div>';
+
+    // Initial "thinking" placeholder
+    messageDiv.innerHTML = '<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> Thinking…</div>';
+
     chatBox.appendChild(messageDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
-    // console.log(messageDiv.innerHTML);
-    return messageDiv;
+
+    return {
+        wrapEl: messageDiv,
+        stepsEl: null,      // created lazily on first step event
+        steps: [],
+        stepIndex: {},
+    };
 }
 
-function updateStreamingMessage(streamingElement, data) {
-    if (!streamingElement) {
-        console.error('Invalid streaming element');
+function _ensureStepsContainer(ctx) {
+    if (ctx.stepsEl) return ctx.stepsEl;
+    ctx.wrapEl.innerHTML = '';
+    const container = document.createElement('div');
+    container.className = 'steps-container';
+    ctx.wrapEl.appendChild(container);
+    ctx.stepsEl = container;
+    return container;
+}
+
+function _renderStep(step) {
+    const el = document.createElement('div');
+    el.className = `thinking-step ${step.status}`;
+
+    const indicator = document.createElement('span');
+    indicator.className = 'step-indicator';
+    if (step.status === 'pending') {
+        indicator.innerHTML = '<img src="static/favicon.ico" class="thinking-cat">';
+    } else if (step.status === 'completed') {
+        indicator.textContent = '✓';
+    } else {
+        indicator.textContent = '•';
+    }
+
+    const text = document.createElement('span');
+    text.className = 'step-text';
+    const label = escapeAttr(step.label);
+    const summaryHtml = step.summary
+        ? ` <span class="step-summary">${escapeAttr(step.summary)}</span>`
+        : '';
+    text.innerHTML = `<strong>${label}</strong>${summaryHtml}`;
+
+    // For query-datasource calls, add a collapsible block showing the query args
+    const isQueryTool = step.tool_name &&
+        step.tool_name.toLowerCase().replace(/_/g, '-') === 'query-datasource';
+    if (isQueryTool && step.args) {
+        const details = document.createElement('details');
+        details.className = 'query-details';
+        const summary = document.createElement('summary');
+        summary.className = 'query-details-summary';
+        summary.textContent = 'View query';
+        const pre = document.createElement('pre');
+        pre.className = 'query-details-body';
+        pre.textContent = typeof step.args === 'string'
+            ? step.args
+            : JSON.stringify(step.args, null, 2);
+        details.appendChild(summary);
+        details.appendChild(pre);
+        text.appendChild(details);
+    }
+
+    el.appendChild(indicator);
+    el.appendChild(text);
+    return el;
+}
+
+function _rebuildStepsList(ctx) {
+    const container = ctx.stepsEl;
+    if (!container) return;
+    container.innerHTML = '';
+    for (const step of ctx.steps) {
+        container.appendChild(_renderStep(step));
+    }
+}
+
+function updateStreamingMessage(ctx, data) {
+    if (!ctx || !ctx.wrapEl) {
+        console.error('Invalid streaming context');
         return;
     }
-    
-    if (data.type === 'step') {
-        // Update with intermediate step content
-        streamingElement.innerHTML = `<div class="thinking"><img src="static/favicon.ico" class="thinking-cat"> ${formatMarkdown(data.content)}</div>`;
-        // Only scroll if it is an intermediate step and not the final response
-        const chatBox = document.getElementById('chatBox');
-        chatBox.scrollTop = chatBox.scrollHeight;
-    } else if (data.type === 'final') {
-        // Replace with final response
-        streamingElement.classList.remove('streaming');
-        streamingElement.innerHTML = formatChatReply(data.content, data.images);
-        // Auto-charts from tabular tool results: skip when this turn includes view images
-        // (e.g. get-view-image) so we don't stack a spurious chart under the dashboard snapshot.
-        const hasImages = Array.isArray(data.images) && data.images.length > 0;
-        if (!hasImages) {
-            renderCharts(streamingElement, data.tables);
-        }
-    }
-    
+
     const chatBox = document.getElementById('chatBox');
-    // chatBox.scrollTop = chatBox.scrollHeight;
+
+    if (data.type === 'tool_call') {
+        // Agent is about to call a tool — add a pending step
+        _ensureStepsContainer(ctx);
+        const idx = ctx.steps.length;
+        ctx.steps.push({ label: data.label, status: 'pending', tool_call_id: data.tool_call_id, tool_name: data.tool_name, args: data.args });
+        ctx.stepIndex[data.tool_call_id] = idx;
+        _rebuildStepsList(ctx);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+    } else if (data.type === 'tool_result') {
+        // Tool returned — mark its step completed and add the summary
+        _ensureStepsContainer(ctx);
+        const idx = ctx.stepIndex[data.tool_call_id];
+        if (idx !== undefined) {
+            ctx.steps[idx].status = 'completed';
+            ctx.steps[idx].summary = data.summary || '';
+        } else {
+            // result without a preceding call event — add it as a new completed step
+            ctx.steps.push({ label: data.label, summary: data.summary || '', status: 'completed' });
+        }
+        _rebuildStepsList(ctx);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+    } else if (data.type === 'step') {
+        // AI reasoning / thinking text — update or add a "reasoning" row
+        _ensureStepsContainer(ctx);
+        // Find or create a reasoning step (always the last entry if it's a reasoning type)
+        const last = ctx.steps[ctx.steps.length - 1];
+        if (last && last._isReasoning) {
+            last.label = 'Thinking…';
+            last.summary = data.content ? data.content.slice(0, 100) + (data.content.length > 100 ? '…' : '') : '';
+        } else {
+            ctx.steps.push({ label: 'Thinking…', summary: '', status: 'pending', _isReasoning: true });
+        }
+        _rebuildStepsList(ctx);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+    } else if (data.type === 'final') {
+        // Replace streaming content with the final answer + collapsible steps log
+        ctx.wrapEl.classList.remove('streaming');
+
+        const stepCount = ctx.steps.filter(s => !s._isReasoning).length;
+        const stepsHtml = stepCount > 0 ? _buildStepsSummaryHtml(ctx.steps) : '';
+        ctx.wrapEl.innerHTML = stepsHtml + formatChatReply(data.content, data.images);
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+}
+
+function _buildStepsSummaryHtml(steps) {
+    const toolSteps = steps.filter(s => !s._isReasoning);
+    if (!toolSteps.length) return '';
+    const rows = toolSteps.map(s => {
+        const icon = s.status === 'completed' ? '✓' : '•';
+        const summary = s.summary ? ` <span class="step-summary">${escapeAttr(s.summary)}</span>` : '';
+        const isQueryTool = s.tool_name &&
+            s.tool_name.toLowerCase().replace(/_/g, '-') === 'query-datasource';
+        const queryBlock = (isQueryTool && s.args)
+            ? `<details class="query-details"><summary class="query-details-summary">View query</summary>` +
+              `<pre class="query-details-body">${escapeAttr(typeof s.args === 'string' ? s.args : JSON.stringify(s.args, null, 2))}</pre></details>`
+            : '';
+        return `<div class="thinking-step ${s.status}">` +
+               `<span class="step-indicator">${icon}</span>` +
+               `<span class="step-text"><strong>${escapeAttr(s.label)}</strong>${summary}${queryBlock}</span>` +
+               `</div>`;
+    }).join('');
+    return `<details class="steps-details"><summary class="steps-summary">${toolSteps.length} step${toolSteps.length !== 1 ? 's' : ''}</summary>` +
+           `<div class="steps-container">${rows}</div></details>`;
 }
 
 // -----------------------------
