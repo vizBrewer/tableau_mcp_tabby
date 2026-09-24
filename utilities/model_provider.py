@@ -43,12 +43,14 @@ def get_llm(
     
     if provider == "openai":
         return _get_openai_llm(model_name, temperature)
+    elif provider == "azure":
+        return _get_azure_openai_llm(model_name, temperature)
     elif provider == "aws":
         return _get_aws_bedrock_llm(model_name, temperature)
     else:
         raise ValueError(
             f"Unsupported model provider: {provider}. "
-            f"Supported providers: 'openai', 'aws'"
+            f"Supported providers: 'openai', 'azure', 'aws'"
         )
 
 
@@ -64,6 +66,55 @@ def _get_openai_llm(model_name: str, temperature: float) -> BaseChatModel:
     
     logger.info(f"Initializing OpenAI model: {model_name}")
     return ChatOpenAI(model=model_name, temperature=temperature)
+
+
+def _get_azure_openai_llm(model_name: str, temperature: float) -> BaseChatModel:
+    """Initialize an Azure OpenAI model (AzureChatOpenAI).
+
+    Azure addresses a model by its *deployment name* on a resource endpoint,
+    authenticated with a resource API key and a pinned API version — distinct
+    from plain OpenAI (which uses only OPENAI_API_KEY + model name).
+
+    Required env vars:
+        AZURE_OPENAI_API_KEY   – key from the resource's "Keys and Endpoint" page
+        AZURE_OPENAI_ENDPOINT  – e.g. https://tableauopenaidemo.openai.azure.com/
+    Optional env vars:
+        AZURE_OPENAI_DEPLOYMENT   – deployment name (defaults to model_name / MODEL_USED)
+        AZURE_OPENAI_API_VERSION  – API version (defaults to a recent GA version)
+    """
+    from langchain_openai import AzureChatOpenAI
+
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    # In Azure the deployment name is what actually selects the model; it may or
+    # may not match the model name. Fall back to model_name (MODEL_USED) so a
+    # same-named deployment works with no extra config.
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or model_name
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+
+    missing = [
+        name for name, value in (
+            ("AZURE_OPENAI_API_KEY", api_key),
+            ("AZURE_OPENAI_ENDPOINT", endpoint),
+        ) if not value
+    ]
+    if missing:
+        raise ValueError(
+            "Missing required environment variable(s) for Azure OpenAI provider: "
+            f"{', '.join(missing)}"
+        )
+
+    logger.info(
+        f"Initializing Azure OpenAI: deployment={deployment}, "
+        f"endpoint={endpoint}, api_version={api_version}"
+    )
+    return AzureChatOpenAI(
+        azure_deployment=deployment,
+        azure_endpoint=endpoint,
+        api_key=api_key,
+        api_version=api_version,
+        temperature=temperature,
+    )
 
 
 def _get_aws_bedrock_llm(model_name: str, temperature: float) -> BaseChatModel:
