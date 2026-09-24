@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Tabby · Settings</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="static/style.css?v=2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+</head>
+
+<body>
+    <div class="container settings-page">
+        <header>
+            <h1>
+                <img src="static/favicon.ico" alt="tabby cat face" width="40" />
+                <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                Settings
+            </h1>
+            <nav class="page-nav">
+                <a href="/" class="nav-link"><i class="fa-solid fa-comments"></i> Chat</a>
+                <a href="/portal" class="nav-link"><i class="fa-solid fa-table-columns"></i> Portal</a>
+                <a href="/grants" class="nav-link"><i class="fa-solid fa-chart-column"></i> Grants</a>
+            </nav>
+        </header>
+
+        <div class="chat-box settings-scroll">
+            <div id="banner" class="settings-banner" style="display:none;"></div>
+
+            <form id="settingsForm" class="settings-form settings-wide" autocomplete="off">
+
+                <fieldset class="settings-fieldset">
+                    <legend>Tableau Site</legend>
+                    <label>Server URL
+                        <input type="url" id="server_url" placeholder="https://your-pod.online.tableau.com">
+                    </label>
+                    <label>Site Content URL
+                        <input type="text" id="site_content_url" placeholder="yoursite">
+                    </label>
+                    <label>Site Name <span class="hint">(display only, optional)</span>
+                        <input type="text" id="site_name" placeholder="Your Site">
+                    </label>
+                    <p class="hint">The Embedding API URL is derived automatically from the Server URL:
+                        <code id="embedding_api_preview">—</code></p>
+                </fieldset>
+
+                <fieldset class="settings-fieldset">
+                    <legend>Connected App (Direct Trust)</legend>
+                    <label>Client ID
+                        <input type="text" id="client_id" placeholder="Connected app client ID">
+                    </label>
+                    <label>Secret ID
+                        <input type="text" id="secret_id" placeholder="Connected app secret ID">
+                    </label>
+                    <label>Secret Value
+                        <input type="password" id="secret_value" placeholder="Enter secret value">
+                        <span class="hint" id="secret_hint">Stored server-side only. Leave blank to keep the existing value.</span>
+                    </label>
+                </fieldset>
+
+                <fieldset class="settings-fieldset">
+                    <legend>Embedding JWT</legend>
+                    <label>Embedding Username <span class="hint">(JWT <code>sub</code> — a Tableau user)</span>
+                        <input type="text" id="embedding_username" placeholder="user@example.com">
+                    </label>
+                    <label>Scopes <span class="hint">(comma-separated)</span>
+                        <input type="text" id="scopes" placeholder="tableau:views:embed, tableau:views:embed_authoring">
+                        <span class="hint">Viewing needs <code>tableau:views:embed</code>. Authoring ("Explore Data" / New Workbook) also needs <code>tableau:views:embed_authoring</code>. Include both.</span>
+                    </label>
+                    <label>Token Lifetime (seconds) <span class="hint">(max 600)</span>
+                        <input type="number" id="token_lifetime_seconds" min="60" max="600" value="600">
+                    </label>
+                </fieldset>
+
+                <fieldset class="settings-fieldset">
+                    <legend>Portal Brand</legend>
+                    <label>Portal Title <span class="hint">(shown in the sidebar & tab)</span>
+                        <input type="text" id="brand_title" placeholder="Embedded Analytics Portal">
+                    </label>
+                </fieldset>
+
+                <fieldset class="settings-fieldset builder-fieldset">
+                    <legend>Portal Content — Group Builder</legend>
+                    <span class="hint">
+                        <strong>Sync</strong> pulls your full Tableau inventory into a catalog. Create
+                        <strong>groups</strong> (they can span multiple Tableau projects), then add views and
+                        data sources from the catalog. Optionally link a data source to a dashboard so its
+                        "Explore Data" tab authors on the right data automatically.
+                    </span>
+                    <div class="settings-actions" style="margin:8px 0;">
+                        <button type="button" id="syncBtn" class="reset-btn">
+                            <i class="fa-solid fa-rotate"></i> Sync from Tableau
+                        </button>
+                        <span id="syncResult" class="settings-test-result"></span>
+                        <span id="syncMeta" class="sync-meta"></span>
+                    </div>
+
+                    <div class="builder">
+                        <!-- LEFT: the curated groups -->
+                        <div class="builder-col">
+                            <div class="builder-col-head">
+                                <i class="fa-solid fa-layer-group"></i> Portal Groups
+                                <span class="count" id="groupsCount">0</span>
+                            </div>
+                            <div class="builder-col-body">
+                                <div class="groups-toolbar">
+                                    <input type="text" id="newGroupName" placeholder="New group name…">
+                                    <button type="button" id="addGroupBtn" class="btn-sm">
+                                        <i class="fa-solid fa-plus"></i> Add
+                                    </button>
+                                </div>
+                                <div id="groupsList"></div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: the synced catalog -->
+                        <div class="builder-col">
+                            <div class="builder-col-head">
+                                <i class="fa-solid fa-database"></i> Tableau Catalog
+                                <span class="count" id="catalogCount">0</span>
+                            </div>
+                            <div class="builder-col-body">
+                                <div class="catalog-toolbar">
+                                    <div class="catalog-tabs">
+                                        <div class="catalog-tab active" data-cat="views">
+                                            <i class="fa-solid fa-chart-column"></i> Views
+                                        </div>
+                                        <div class="catalog-tab" data-cat="datasources">
+                                            <i class="fa-solid fa-database"></i> Data Sources
+                                        </div>
+                                    </div>
+                                    <div class="catalog-filter-row">
+                                        <input type="search" id="catalogSearch" placeholder="Search catalog…">
+                                        <select id="catalogProject"><option value="">All projects</option></select>
+                                    </div>
+                                    <span class="hint" id="catalogTargetHint">Adds to the selected group. Pick or create a group first.</span>
+                                </div>
+                                <div class="catalog-bulkbar">
+                                    <span class="sel-count" id="catalogSelCount">0</span>
+                                    <span>selected</span>
+                                    <span class="spacer"></span>
+                                    <button type="button" id="catalogAddSelected" class="btn-sm" disabled>
+                                        <i class="fa-solid fa-plus"></i> Add selected
+                                    </button>
+                                </div>
+                                <div class="catalog-table-wrap">
+                                    <div class="catalog-table-scroll">
+                                        <table class="catalog-table" id="catalogTable"></table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <details class="settings-fieldset" style="margin-top:14px; padding:10px 14px;">
+                        <summary class="advanced-toggle">Advanced · edit raw groups JSON</summary>
+                        <span class="hint" style="display:block; margin:8px 0;">
+                            Power users only. Editing here overrides the builder when you Save.
+                            Fields per dashboard: <code>id</code>, <code>name</code>, <code>viz_url</code>,
+                            <code>toolbar</code>, <code>icon</code>, <code>datasource_id</code>.
+                        </span>
+                        <textarea id="groups_json" rows="12" spellcheck="false" placeholder="[]"></textarea>
+                        <span class="settings-inline-error" id="groups_error" style="display:none;"></span>
+                    </details>
+                </fieldset>
+
+                <div class="settings-actions">
+                    <button type="submit" id="saveBtn">Save Settings</button>
+                    <button type="button" id="testBtn" class="reset-btn">Test Embed Token</button>
+                    <span id="testResult" class="settings-test-result"></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/settings.js?v=4"></script>
+    <script src="/static/tabby_widget.js?v=2"></script>
+</body>
+
+</html>

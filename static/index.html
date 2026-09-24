@@ -8,7 +8,6 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="static/style.css">
     <script src="static/tableau.extensions.1.latest.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 </head>
 
@@ -25,6 +24,11 @@
                 <span id="statusIndicator" class="status-indicator">● Connecting…</span>
                 <button id="resetBtn" class="reset-btn" type="button">Reset Session</button>
             </div>
+            <nav class="page-nav">
+                <a href="/portal" class="nav-link"><i class="fa-solid fa-table-columns"></i> Portal</a>
+                <a href="/grants" class="nav-link"><i class="fa-solid fa-chart-column"></i> Grants</a>
+                <a href="/settings" class="nav-link"><i class="fa-solid fa-gear"></i> Settings</a>
+            </nav>
         </header>
 
         <div class="suggested-uses-panel">
@@ -76,7 +80,7 @@
         </div>
     </div>
 
-    <script src="/static/script.js?v=13"></script>
+    <script src="/static/script.js?v=17"></script>
 </body>
 
 </html>
