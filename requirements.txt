@@ -18,5 +18,11 @@ langfuse
 # Utilities
 python-dotenv
 
+# Tableau embedding (connected-app JWT minting)
+PyJWT
+
+# Tableau REST API sync (portal content)
+httpx
+
 # AWS dependencies (only needed if MODEL_PROVIDER=aws)
 boto3

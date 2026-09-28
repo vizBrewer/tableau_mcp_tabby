@@ -1,0 +1,35 @@
+{
+  "tableau": {
+    "server_url": "https://your-pod.online.tableau.com",
+    "site_content_url": "yoursite",
+    "site_name": "Your Site"
+  },
+  "connected_app": {
+    "client_id": "",
+    "secret_id": "",
+    "secret_value": ""
+  },
+  "jwt": {
+    "embedding_username": "user@example.com",
+    "scopes": ["tableau:views:embed"],
+    "token_lifetime_seconds": 600
+  },
+  "portal": {
+    "agencies": [
+      {
+        "id": "cms",
+        "name": "Centers for Medicare & Medicaid Services (CMS)",
+        "dashboards": [
+          {
+            "id": "cms_measures",
+            "name": "Quality Measures Performance",
+            "icon": "fa-chart-line",
+            "viz_url": "https://your-pod.online.tableau.com/t/yoursite/views/Workbook/Sheet",
+            "datasource_luid": "",
+            "toolbar": "hidden"
+          }
+        ]
+      }
+    ]
+  }
+}

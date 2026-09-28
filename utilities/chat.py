@@ -1,6 +1,8 @@
 import json
+import os
 import re
 from typing import Any, List
+
 
 
 def _mcp_image_block_to_data_url(obj: Any) -> str | None:
@@ -78,113 +80,6 @@ def extract_images_from_tool_message(message: Any) -> List[str]:
     return urls
 
 
-def _is_scalar(value: Any) -> bool:
-    return value is None or isinstance(value, (str, int, float, bool))
-
-
-def _normalize_rows_dict_list(rows: Any, max_rows: int = 120) -> List[dict]:
-    if not isinstance(rows, list):
-        return []
-    normalized: List[dict] = []
-    for row in rows[:max_rows]:
-        if isinstance(row, dict):
-            clean = {str(k): v for k, v in row.items() if _is_scalar(v)}
-            if clean:
-                normalized.append(clean)
-    return normalized
-
-
-def _normalize_rows_with_columns(obj: dict, max_rows: int = 120) -> List[dict]:
-    columns = obj.get("columns")
-    rows = obj.get("rows")
-    if not isinstance(columns, list) or not isinstance(rows, list):
-        return []
-    col_names = [str(c) for c in columns]
-    normalized: List[dict] = []
-    for row in rows[:max_rows]:
-        if isinstance(row, list):
-            mapped = {}
-            for i, col in enumerate(col_names):
-                if i < len(row) and _is_scalar(row[i]):
-                    mapped[col] = row[i]
-            if mapped:
-                normalized.append(mapped)
-        elif isinstance(row, dict):
-            mapped = {str(k): v for k, v in row.items() if _is_scalar(v)}
-            if mapped:
-                normalized.append(mapped)
-    return normalized
-
-
-def _extract_tables_from_any(content: Any) -> List[dict]:
-    """Extract compact tabular data candidates from tool outputs."""
-    candidates: List[dict] = []
-    seen: set[str] = set()
-
-    def add_table(rows: List[dict], title: str = "Tool Result") -> None:
-        if len(rows) < 2:
-            return
-        # Require at least one numeric value somewhere for charting potential.
-        has_numeric = any(
-            isinstance(v, (int, float)) and not isinstance(v, bool)
-            for row in rows for v in row.values()
-        )
-        if not has_numeric:
-            return
-        key = json.dumps(rows[:20], sort_keys=True, default=str)
-        if key in seen:
-            return
-        seen.add(key)
-        candidates.append({"title": title, "rows": rows})
-
-    def walk(value: Any, path_hint: str = "Tool Result") -> None:
-        if value is None:
-            return
-        if isinstance(value, str):
-            try:
-                decoded = json.loads(value)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                return
-            walk(decoded, path_hint)
-            return
-        if isinstance(value, list):
-            rows = _normalize_rows_dict_list(value)
-            if rows:
-                add_table(rows, path_hint)
-            for item in value:
-                walk(item, path_hint)
-            return
-        if isinstance(value, dict):
-            title = str(value.get("name") or value.get("title") or value.get("caption") or path_hint)
-            # Common tabular container shapes.
-            for key in ("data", "result", "results", "records", "items", "values"):
-                rows = _normalize_rows_dict_list(value.get(key))
-                if rows:
-                    add_table(rows, title)
-            rows = _normalize_rows_with_columns(value)
-            if rows:
-                add_table(rows, title)
-            for k, sub in value.items():
-                walk(sub, str(k))
-
-    walk(content)
-    return candidates
-
-
-def extract_tables_from_tool_message(message: Any) -> List[dict]:
-    """Skip tabular extraction for view-image tools — metadata shapes confuse auto-charts."""
-    tool_name = getattr(message, "name", None) or ""
-    if isinstance(tool_name, str):
-        tl = tool_name.lower().replace("_", "-")
-        if "view-image" in tl or tl.endswith("get-view-image"):
-            return []
-    tables: List[dict] = []
-    for table in _extract_tables_from_any(getattr(message, "content", None)):
-        tables.append(table)
-    for table in _extract_tables_from_any(getattr(message, "artifact", None)):
-        tables.append(table)
-    # Keep payload modest for SSE
-    return tables[:4]
 
 
 def stringify_ai_content(content, include_reasoning: bool = False) -> str:
@@ -305,21 +200,51 @@ async def repair_incomplete_tool_calls(agent, thread_id, logger):
 #             return "I encountered a validation error while processing your request. Please try rephrasing your question or refresh your browser to start a new session."
 #         raise
 
+def _friendly_tool_name(raw_name: str) -> str:
+    """Convert a snake/kebab-case MCP tool name into a readable label."""
+    return raw_name.replace("-", " ").replace("_", " ").title()
+
+
+def _tool_result_summary(message: Any) -> str:
+    """Return a short human-readable summary of a tool result message."""
+    content = getattr(message, "content", None)
+    if content is None:
+        return "Done"
+    text = content if isinstance(content, str) else json.dumps(content, default=str)
+    # Pull out a row/record count hint if present
+    try:
+        parsed = json.loads(text) if isinstance(text, str) else content
+        if isinstance(parsed, list):
+            return f"{len(parsed)} record(s) returned"
+        if isinstance(parsed, dict):
+            for key in ("data", "result", "results", "records", "items", "rows"):
+                sub = parsed.get(key)
+                if isinstance(sub, list):
+                    return f"{len(sub)} record(s) returned"
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    # Fallback: first 120 chars of the text
+    short = text.strip().replace("\n", " ")
+    return short[:120] + ("…" if len(short) > 120 else "")
+
+
 async def stream_agent_response(agent, messages, callback_handler, thread_id):
     """Stream intermediate steps and final response from agent"""
     import logging
     logger = logging.getLogger(__name__)
     logger.info(f"[{thread_id}] Starting stream for thread")
-    
+
     final_response = ""
     collected_images: List[str] = []
-    collected_tables: List[dict] = []
     seen_message_ids = set()
     initial_message_count = None
-    
+    # Track which tool_call ids we have already announced so we can pair them
+    # with their result events.
+    pending_tool_calls: dict = {}  # tool_call_id -> tool_name
+
     try:
         async for chunk in agent.astream(
-            {"messages": messages}, 
+            {"messages": messages},
             # checks if callback handler is not None then add it to the config, otherwise add an empty list
             config={"configurable": {"thread_id": thread_id}, "callbacks": [callback_handler] if callback_handler else []},
             stream_mode="values"
@@ -328,30 +253,58 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
                 # Capture initial message count on first chunk
                 if initial_message_count is None:
                     initial_message_count = len(chunk['messages'])
-                
+
                 # Only process messages beyond the initial count (new messages)
                 new_messages = chunk['messages'][initial_message_count:]
-                
+
                 for message in new_messages:
                     message_id = getattr(message, 'id', None)
-                    
+
                     # Skip if we've already seen this message in this stream
                     if message_id and message_id in seen_message_ids:
                         continue
-                        
+
                     if message_id:
                         seen_message_ids.add(message_id)
 
-                    if getattr(message, "type", None) == "tool":
+                    msg_type = getattr(message, "type", None)
+
+                    # ── Tool result ──────────────────────────────────────────
+                    if msg_type == "tool":
+                        tool_call_id = getattr(message, "tool_call_id", None)
+                        tool_name = getattr(message, "name", None) or pending_tool_calls.get(tool_call_id, "tool")
+                        summary = _tool_result_summary(message)
+                        yield {
+                            "type": "tool_result",
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
+                            "label": _friendly_tool_name(tool_name),
+                            "summary": summary,
+                            "is_final": False,
+                        }
                         for url in extract_images_from_tool_message(message):
                             if url not in collected_images:
                                 collected_images.append(url)
-                        for table in extract_tables_from_tool_message(message):
-                            if table not in collected_tables:
-                                collected_tables.append(table)
-                    
-                    # Stream AI thinking/reasoning
-                    if hasattr(message, 'type') and message.type == 'ai':
+
+                    # ── AI message ───────────────────────────────────────────
+                    elif msg_type == "ai":
+                        # Emit one tool_call event per tool the agent wants to invoke
+                        tool_calls = getattr(message, "tool_calls", None) or []
+                        for tc in tool_calls:
+                            tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                            tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "tool")
+                            if tc_id and tc_id not in pending_tool_calls:
+                                pending_tool_calls[tc_id] = tc_name
+                                tc_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
+                                yield {
+                                    "type": "tool_call",
+                                    "tool_call_id": tc_id,
+                                    "tool_name": tc_name,
+                                    "label": _friendly_tool_name(tc_name),
+                                    "args": tc_args,
+                                    "is_final": False,
+                                }
+
                         if hasattr(message, 'content') and message.content:
                             step_text = stringify_ai_content(message.content, include_reasoning=True)
                             final_text = stringify_ai_content(message.content, include_reasoning=False)
@@ -388,7 +341,6 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
             "type": "final",
             "content": final_response,
             "images": collected_images,
-            "tables": collected_tables,
             "is_final": True
         }
         logger.info(f"[{thread_id}] Stream completed, final response length: {len(final_response)}")
@@ -412,7 +364,6 @@ async def stream_agent_response(agent, messages, callback_handler, thread_id):
             "type": "final",
             "content": final_error_message,
             "images": collected_images,
-            "tables": collected_tables,
             "is_final": True
         }
         

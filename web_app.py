@@ -1,7 +1,9 @@
 # Web UI Libraries
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from pathlib import Path
+
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -24,6 +26,22 @@ logger = setup_logging("web_app.log")
 from utilities.prompt import AGENT_SYSTEM_PROMPT
 from utilities.chat import stream_agent_response
 from utilities.model_provider import get_llm
+
+# Tableau embedding: settings storage + connected-app JWT minting
+from utilities.settings_store import (
+    get_public_settings,
+    save_settings,
+    load_settings,
+    get_signing_material,
+    is_configured,
+    derive_embedding_api_url,
+    save_catalog,
+    get_catalog,
+    build_portal_projection,
+    add_dashboards_to_group,
+)
+from utilities.embed_token import mint_embed_token
+from utilities.tableau_rest import fetch_catalog, fetch_view_preview
 # LEGACY/TESTING: format_agent_response is commented out - uncomment if you need non-streaming endpoint
 # from utilities.chat import format_agent_response
 
@@ -42,6 +60,14 @@ mcp_http_url = os.getenv(
 )
 if not mcp_http_url:
     raise RuntimeError("TABLEAU_MCP_HTTP_URL must be defined")
+
+def _static_html_response(filename: str) -> HTMLResponse:
+    html = Path(f"static/{filename}").read_text(encoding="utf-8")
+    return HTMLResponse(html)
+
+
+def _index_html_response() -> HTMLResponse:
+    return _static_html_response("index.html")
 
 # Set Langfuse Tracing or local Tracing
 callback_handler = None
@@ -167,11 +193,310 @@ class ChatResponse(BaseModel):
 @app.get("/")
 def home():
     """Serve the main HTML page"""
-    return FileResponse('static/index.html')
+    return _index_html_response()
+
 
 @app.get("/index.html")
 def static_index():
-    return FileResponse('static/index.html')
+    return _index_html_response()
+
+
+# ── Tableau embedding: showcase pages ──────────────────────────────────────
+@app.get("/portal")
+def portal_page():
+    """Serve the embedded-dashboard portal (collapsible sidebar of curated groups)."""
+    return _static_html_response("portal.html")
+
+
+@app.get("/grants")
+def grants_page():
+    """Serve the single-dashboard demo with filter dropdowns."""
+    return _static_html_response("grants.html")
+
+
+@app.get("/settings")
+def settings_page():
+    """Serve the Tableau connection / embedding settings page."""
+    return _static_html_response("settings.html")
+
+
+@app.get("/widget")
+def widget_page():
+    """Serve the compact chat UI embedded by the floating Tabby widget."""
+    return _static_html_response("widget.html")
+
+
+# ── Tableau embedding: API endpoints ───────────────────────────────────────
+@app.get("/api/settings")
+async def api_get_settings():
+    """Return current settings with the connected-app secret value masked."""
+    return get_public_settings()
+
+
+@app.post("/api/settings")
+async def api_save_settings(request: Request):
+    """Persist settings. Accepts a free-form dict (portal groups are open-ended)."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Settings payload must be an object")
+    try:
+        return save_settings(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to save settings: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save settings")
+
+
+@app.get("/api/portal-config")
+async def api_portal_config():
+    """Public portal content (curated projection) + embedding endpoints. No secrets."""
+    settings = load_settings()
+    server_url = settings["tableau"]["server_url"]
+    projection = build_portal_projection()
+    return {
+        "groups": projection["groups"],
+        "datasources": projection["datasources"],
+        "brand": projection["brand"],
+        "server_url": server_url,
+        "site_content_url": settings["tableau"]["site_content_url"],
+        "embedding_api_url": derive_embedding_api_url(server_url),
+    }
+
+
+@app.get("/api/catalog")
+async def api_catalog():
+    """Return the full synced Tableau inventory for the settings group-builder.
+
+    Browser-safe (no secrets) — this is the superset the user curates from.
+    """
+    return get_catalog()
+
+
+@app.get("/api/view-thumbnail/{view_id}")
+async def api_view_thumbnail(view_id: str):
+    """Proxy the Tableau REST previewImage (PNG thumbnail) for a view.
+
+    Maps view_id → its workbook_id via the synced catalog, then fetches the
+    thumbnail with a cached REST session. Used by the portal welcome gallery.
+    """
+    catalog = get_catalog()
+    workbook_id = None
+    for w in catalog.get("workbooks", []):
+        if any(v.get("id") == view_id for v in w.get("views", [])):
+            workbook_id = w.get("id")
+            break
+    if not workbook_id:
+        raise HTTPException(status_code=404, detail="View not found in catalog")
+
+    ok, _ = is_configured()
+    if not ok:
+        raise HTTPException(status_code=400, detail="Tableau connection not configured")
+    try:
+        png = fetch_view_preview(get_signing_material(), view_id, workbook_id)
+    except Exception as exc:
+        logger.warning("Thumbnail fetch failed for view %s: %s", view_id, exc)
+        raise HTTPException(status_code=502, detail="Could not fetch thumbnail")
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=1800"},
+    )
+
+
+@app.post("/api/catalog/sync")
+async def api_catalog_sync():
+    """Fetch the full inventory (workbooks/views + datasources) from the Tableau
+    REST API and store it as the catalog. Does NOT alter curated portal groups.
+    Reuses the connected-app secret (REST-scoped JWT)."""
+    ok, missing = is_configured()
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tableau connection not configured. Missing: {', '.join(missing)}",
+        )
+    try:
+        signing = get_signing_material()
+        content = fetch_catalog(signing)
+    except Exception as exc:
+        logger.error(f"Failed to sync catalog from Tableau REST: {exc}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Tableau REST sync failed: {exc}")
+
+    # No reliable wall clock without Date.now(); stamp with the REST session time.
+    from datetime import datetime, timezone
+    synced_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    catalog = save_catalog(
+        content["workbooks"], content["datasources"], content["projects"], synced_at
+    )
+    view_count = sum(len(w.get("views", [])) for w in catalog["workbooks"])
+    return {
+        "catalog": catalog,
+        "workbook_count": len(catalog["workbooks"]),
+        "view_count": view_count,
+        "datasource_count": len(catalog["datasources"]),
+        "project_count": len(catalog["projects"]),
+        "synced_at": synced_at,
+    }
+
+
+def _match_published_workbook(workbooks: list, workbook_name: str, new_url: str) -> dict | None:
+    """Resolve which catalog workbook a publish event refers to.
+
+    The publish event reliably carries only `newUrl`; the display name may be
+    absent. We try, in order: (A) exact display-name match, (B) workbook LUID
+    present in the URL, (C) the workbook's contentUrl token (derived from a
+    view's contentUrl, the part before "/sheets/") present in the URL. This
+    survives the various URL shapes Tableau returns after publish.
+    """
+    from urllib.parse import unquote
+    if workbook_name:
+        named = [w for w in workbooks if (w.get("name") or "") == workbook_name]
+        if named:
+            return named[-1]
+
+    if new_url:
+        decoded = unquote(new_url).lower()
+        # (B) LUID in the URL.
+        for w in workbooks:
+            wid = (w.get("id") or "").lower()
+            if wid and wid in decoded:
+                return w
+        # (C) workbook contentUrl token (from any view's contentUrl prefix).
+        for w in workbooks:
+            for v in w.get("views", []):
+                cu = (v.get("content_url") or "")
+                prefix = cu.split("/sheets/")[0].strip("/").lower()
+                if prefix and prefix in decoded:
+                    return w
+    return None
+
+
+@app.post("/api/portal-config/add-published")
+async def api_add_published(request: Request):
+    """Add sheets from a just-published workbook to a portal group.
+
+    Called by the portal when the embedded Web Authoring viz fires a publish
+    event. Re-syncs the catalog via REST (so the new workbook is present), finds
+    the workbook by name, and appends its views (optionally filtered to
+    `sheet_names`) as dashboards to the target group.
+
+    Body: { group_id?, group_name?, workbook_name (required), sheet_names? }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON")
+    workbook_name = (body.get("workbook_name") or "").strip()
+    new_url = (body.get("new_url") or "").strip()
+    if not workbook_name and not new_url:
+        raise HTTPException(status_code=400, detail="workbook_name or new_url is required")
+
+    ok, missing = is_configured()
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tableau connection not configured. Missing: {', '.join(missing)}",
+        )
+
+    # Refresh the catalog so the freshly-published workbook is present.
+    try:
+        signing = get_signing_material()
+        content = fetch_catalog(signing)
+    except Exception as exc:
+        logger.error(f"Failed to sync catalog for add-published: {exc}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Tableau REST sync failed: {exc}")
+
+    from datetime import datetime, timezone
+    synced_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    save_catalog(content["workbooks"], content["datasources"], content["projects"], synced_at)
+
+    workbook = _match_published_workbook(content["workbooks"], workbook_name, new_url)
+    logger.info(
+        "add-published: workbook_name=%r new_url=%r catalog_workbooks=%d matched=%r",
+        workbook_name, new_url, len(content["workbooks"]),
+        (workbook or {}).get("name"),
+    )
+    if not workbook:
+        # Log the catalog names so we can see why matching missed.
+        logger.info("add-published NO MATCH; catalog names: %s",
+                    [w.get("name") for w in content["workbooks"]][:60])
+        hint = workbook_name or new_url
+        raise HTTPException(
+            status_code=404,
+            detail=f"Couldn't match the published workbook ({hint}) in the catalog yet — try again in a moment.",
+        )
+    workbook_name = workbook.get("name") or workbook_name
+
+    views = workbook.get("views", [])
+    sheet_names = body.get("sheet_names")
+    if isinstance(sheet_names, list) and sheet_names:
+        wanted = set(sheet_names)
+        filtered = [v for v in views if v.get("name") in wanted]
+        views = filtered or views  # fall back to all if names didn't match
+
+    # Auto-link the data source the workbook was authored on: map the authoring
+    # content_url (what the portal launched authoring with) back to a catalog
+    # datasource LUID, so the new dashboards are linked without manual setup.
+    ds_content_url = (body.get("datasource_content_url") or "").strip()
+    datasource_id = ""
+    if ds_content_url:
+        match = next(
+            (d for d in content["datasources"] if (d.get("content_url") or "") == ds_content_url),
+            None,
+        )
+        datasource_id = (match or {}).get("id", "")
+
+    dashboards = [
+        {
+            "id": v.get("id"),
+            "name": v.get("name") or v.get("id"),
+            "viz_url": v.get("viz_url", ""),
+            "toolbar": "hidden",
+            "icon": "fa-chart-column",
+            "datasource_id": datasource_id,
+            "self_published": True,  # authored & published from the portal → editable
+        }
+        for v in views if v.get("id") and v.get("viz_url")
+    ]
+    if not dashboards:
+        raise HTTPException(status_code=404, detail="No embeddable views found in the published workbook.")
+
+    group_id, added = add_dashboards_to_group(
+        body.get("group_id"), dashboards, body.get("group_name")
+    )
+    return {
+        "group_id": group_id,
+        "workbook": workbook_name,
+        "added": added,
+        "added_count": len(added),
+    }
+
+
+@app.get("/api/embed-token")
+async def api_embed_token():
+    """Mint a fresh connected-app JWT for embedding. Fully public by design."""
+    ok, missing = is_configured()
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Embedding not configured. Missing: {', '.join(missing)}",
+        )
+    try:
+        signing = get_signing_material()
+        token, exp = mint_embed_token(signing)
+    except Exception as exc:
+        logger.error(f"Failed to mint embed token: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to mint embed token")
+    return {
+        "token": token,
+        "exp": exp,
+        "server_url": signing["server_url"],
+        "site_content_url": signing["site_content_url"],
+    }
+
 
 @app.get("/session")
 async def init_session():

@@ -107,6 +107,13 @@ Thumbs.db
 config.local.*
 local_settings.py
 
+# Tableau embedding settings (contains connected-app secret value — never commit)
+config/settings.json
+!config/settings.example.json
+
+# Salesforce CLI local org state
+.sf/
+
 # Langfuse local data
 .langfuse/
 

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Tabby</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <style>
+        /* The widget iframe fills its panel; drop the centered-card chrome. */
+        body { background: #fff; }
+        .container {
+            max-width: 100%;
+            width: 100%;
+            margin: 0;
+            border-radius: 0;
+            height: 100vh;
+            box-shadow: none;
+        }
+        /* Hide the standalone-only status bar; keep a compact status indicator. */
+        header { padding: 8px 12px; }
+        header h1 { font-size: 1.05em; gap: 6px; }
+    </style>
+</head>
+
+<body class="tabby-widget-body">
+    <div class="container">
+        <header>
+            <h1>
+                <img src="static/favicon.ico" alt="tabby cat face" width="28" />
+                Tabby
+            </h1>
+            <div class="status-bar">
+                <span id="statusIndicator" class="status-indicator">● Connecting…</span>
+                <button id="resetBtn" class="reset-btn" type="button">Reset</button>
+            </div>
+        </header>
+
+        <div class="chat-box" id="chatBox">
+            <div class="message bot">
+                Hi, I'm Tabby &#128008; — ask me about your Tableau data.
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type your question here..."
+                onkeypress="handleEnter(event)">
+            <button onclick="sendMessage()" id="sendBtn">Send</button>
+            <button onclick="stopGeneration()" id="stopBtn" class="stop-btn" style="display: none;">
+                <i class="fa-solid fa-stop"></i> Stop
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/script.js?v=17"></script>
+</body>
+
+</html>

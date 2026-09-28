@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Public Health Grants Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:     #1a4480;
+      --blue-mid: #2e6db4;
+      --gold:     #f9c642;
+      --bg:       #f4f6f9;
+      --white:    #ffffff;
+      --border:   #dce1e7;
+      --text:     #1b1b1b;
+      --muted:    #6b7280;
+    }
+
+    body {
+      font-family: 'Source Sans 3', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--blue);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 4px solid var(--gold);
+    }
+    .header-left h1 { font-family: 'Merriweather', serif; font-size: 18px; color: #fff; }
+    .header-left p { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 2px; }
+    .header-links a { color: rgba(255,255,255,0.85); font-size: 13px; text-decoration: none; margin-left: 16px; }
+    .header-links a:hover { color: #fff; text-decoration: underline; }
+
+    .page {
+      flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding: 28px 24px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .stat-card { background: var(--white); border: 1px solid var(--border); border-top: 3px solid var(--blue); border-radius: 5px; padding: 14px 18px; }
+    .stat-card .val { font-family: 'Merriweather', serif; font-size: 22px; font-weight: 700; color: var(--blue); }
+    .stat-card .lbl { font-size: 11.5px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .filters { background: var(--white); border: 1px solid var(--border); border-radius: 5px; padding: 14px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .filters label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .filters select { height: 32px; border: 1px solid #c4cad4; border-radius: 4px; padding: 0 10px; font-size: 13px; color: var(--text); background: #fff; outline: none; }
+    .filters select:focus { border-color: var(--blue-mid); }
+    .filter-apply { height: 32px; padding: 0 16px; background: var(--blue); color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .filter-apply:hover { background: var(--blue-mid); }
+
+    .embed-card { background: var(--white); border: 1px solid var(--border); border-radius: 5px; overflow-x: auto; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .embed-card-header { background: var(--blue); padding: 11px 20px; display: flex; align-items: center; justify-content: space-between; }
+    .embed-card-header span { font-size: 13px; font-weight: 700; color: #fff; }
+    .embed-status { font-size: 11px; color: rgba(255,255,255,0.6); font-style: italic; }
+
+    .viz-wrapper { width: 100%; min-height: 620px; background: #f0f4f9; display: flex; align-items: stretch; }
+    tableau-viz { width: 100%; min-width: 1200px; height: 620px; }
+
+    footer { background: var(--blue); text-align: center; padding: 16px; font-size: 12px; color: rgba(255,255,255,0.5); }
+
+    @media (max-width: 700px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      header { flex-direction: column; align-items: flex-start; gap: 8px; }
+      tableau-viz { height: 480px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1>Public Health Grants Dashboard</h1>
+      <p>Federal grant award data by program, recipient, and geography</p>
+    </div>
+    <div class="header-links">
+      <a href="/">Chat</a>
+      <a href="/portal">Portal</a>
+      <a href="/settings">Settings</a>
+    </div>
+  </header>
+
+  <div class="page">
+
+    <div class="stats">
+      <div class="stat-card"><div class="val">$12.4B</div><div class="lbl">Total Awards (FY 2024)</div></div>
+      <div class="stat-card"><div class="val">4,821</div><div class="lbl">Active Grantees</div></div>
+      <div class="stat-card"><div class="val">186</div><div class="lbl">Grant Programs</div></div>
+      <div class="stat-card"><div class="val">56</div><div class="lbl">States &amp; Territories</div></div>
+    </div>
+
+    <div class="filters">
+      <label>Filter:</label>
+      <select id="filter-fy">
+        <option value="">Fiscal Year: All</option>
+        <option value="2024">FY 2024</option>
+        <option value="2023">FY 2023</option>
+        <option value="2022">FY 2022</option>
+      </select>
+      <select id="filter-program">
+        <option value="">Program Area: All</option>
+        <option value="Primary Care">Primary Care</option>
+        <option value="Maternal &amp; Child Health">Maternal &amp; Child Health</option>
+        <option value="HIV/AIDS">HIV/AIDS</option>
+        <option value="Rural Health">Rural Health</option>
+        <option value="Workforce Development">Workforce Development</option>
+      </select>
+      <select id="filter-geo">
+        <option value="">Geography: All States</option>
+        <option value="Northeast">Northeast</option>
+        <option value="Southeast">Southeast</option>
+        <option value="Midwest">Midwest</option>
+        <option value="West">West</option>
+      </select>
+      <button class="filter-apply" id="applyBtn">Apply</button>
+    </div>
+
+    <div class="embed-card">
+      <div class="embed-card-header">
+        <span>Grant Awards — Interactive Dashboard</span>
+        <span class="embed-status" id="viz-status">Loading…</span>
+      </div>
+      <div class="viz-wrapper" id="vizWrapper">
+        <!-- <tableau-viz> injected by grants.js once a token is minted -->
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    Public Health Grants Data Portal &nbsp;·&nbsp; For internal use only &nbsp;·&nbsp; Data sourced from federal award systems
+  </footer>
+
+  <script src="/static/embed_common.js?v=1"></script>
+  <script src="/static/grants.js?v=1"></script>
+  <script src="/static/tabby_widget.js?v=2"></script>
+</body>
+</html>
